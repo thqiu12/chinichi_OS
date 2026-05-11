@@ -55,6 +55,9 @@ async function main() {
   const teacherArt = await prisma.user.create({
     data: { email: "art@chinichi.local", password: pw, name: "鈴木先生", role: "TEACHER" },
   });
+  const sales = await prisma.user.create({
+    data: { email: "sales@chinichi.local", password: pw, name: "王 sales", role: "SALES" },
+  });
 
   await prisma.membership.createMany({
     data: [
@@ -66,15 +69,30 @@ async function main() {
     ],
   });
 
-  // Lead
-  await prisma.lead.create({
-    data: {
-      name: "周晓雯", phone: "13800001111", wechatId: "zhouxw",
-      nationality: "CN", targetDegree: "大学院",
-      sourceChannel: "小红书", status: "NEGOTIATING",
-      conversionProbability: 70,
-      nextAction: "本周三试听后跟进", nextActionDueAt: addDays(new Date(), 3),
-    },
+  // Leads
+  await prisma.lead.createMany({
+    data: [
+      { name: "周晓雯", phone: "13800001111", wechatId: "zhouxw",
+        nationality: "CN", targetDegree: "大学院", sourceChannel: "小红书",
+        salesId: sales.id, status: "NEGOTIATING", conversionProbability: 70,
+        nextAction: "本周三试听后跟进", nextActionDueAt: addDays(new Date(), 3) },
+      { name: "刘星辰", phone: "13800002222",
+        nationality: "CN", targetDegree: "学部", sourceChannel: "公众号",
+        salesId: sales.id, status: "TRIAL", conversionProbability: 55,
+        nextAction: "确认试听课时间", nextActionDueAt: addDays(new Date(), 1) },
+      { name: "高奈奈", phone: "13800003333",
+        nationality: "CN", targetDegree: "美术", sourceChannel: "B站",
+        salesId: sales.id, status: "CONTACTED", conversionProbability: 30,
+        nextAction: "约一次面咨", nextActionDueAt: addDays(new Date(), 5) },
+      { name: "Tanaka Yui", phone: "08012345678",
+        nationality: "JP", targetDegree: "大学院", sourceChannel: "推荐",
+        salesId: sales.id, status: "NEW", conversionProbability: 15,
+        nextAction: "首次电话沟通", nextActionDueAt: addDays(new Date(), 2) },
+      { name: "李铭", phone: "13800005555",
+        nationality: "CN", targetDegree: "音乐", sourceChannel: "小红书",
+        salesId: sales.id, status: "LOST", conversionProbability: 0,
+        notes: "预算不足，转介绍" },
+    ],
   });
 
   // Students
@@ -259,6 +277,7 @@ async function main() {
   console.log("✓ seed done");
   console.log("  · admin:   admin@chinichi.local / admin1234");
   console.log("  · mentor:  mentor@chinichi.local / admin1234");
+  console.log("  · sales:   sales@chinichi.local  / admin1234");
   console.log("  · student: student@chinichi.local / admin1234");
 }
 

@@ -38,9 +38,25 @@ export async function currentUser(): Promise<Me> {
     );
     if (u) return { id: u.id, name: u.name, email: u.email, role: u.role, avatarUrl: u.avatarUrl };
   }
-  // Demo fallback so the UI never breaks while you're setting things up
-  return { id: "demo", name: "Demo Mentor", email: "demo@chinichi.local",
-           role: "MENTOR", avatarUrl: null };
+  // Demo: a "wear a hat" cookie lets you preview the system as any role without seeding.
+  const demoRole = cookies().get("chinichi_demo_role")?.value;
+  const role = demoRole && ["ADMIN","MENTOR","TEACHER","SALES","CAMPUS_HEAD","DIVISION_HEAD"].includes(demoRole)
+    ? demoRole : "ADMIN";
+  const name =
+    role === "SALES"  ? "Demo Sales" :
+    role === "MENTOR" ? "Demo Mentor" :
+    role === "TEACHER"? "Demo Teacher" :
+                        "Demo Admin";
+  return { id: "demo", name, email: "demo@chinichi.local", role, avatarUrl: null };
+}
+
+/** Throw-style guard for layouts/routes. */
+export async function requireRole(allowed: string[]) {
+  const me = await currentUser();
+  if (!allowed.includes(me.role)) {
+    return { ok: false as const, me };
+  }
+  return { ok: true as const, me };
 }
 
 export async function currentStudent() {

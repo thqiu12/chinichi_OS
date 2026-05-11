@@ -17,6 +17,7 @@ enum Role {
   DIVISION_HEAD
   MENTOR
   TEACHER
+  SALES
   STUDENT
 }
 

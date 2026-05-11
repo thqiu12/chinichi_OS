@@ -3,14 +3,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
-  LayoutDashboard, Users, GraduationCap, CalendarRange,
+  LayoutDashboard, GraduationCap, CalendarRange,
   AlarmClock, MessageCircle, ListTodo, Building2,
 } from "lucide-react";
 
 const NAV = [
   { href: "/dashboard",           label: "仪表盘", icon: LayoutDashboard },
   { href: "/students",            label: "学生",   icon: GraduationCap },
-  { href: "/crm/leads",           label: "线索",   icon: Users },
   { href: "/lessons/calendar",    label: "课程",   icon: CalendarRange },
   { href: "/deadlines",           label: "Deadline", icon: AlarmClock },
   { href: "/followups/new",       label: "写跟进", icon: MessageCircle },
