@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Home, Inbox, Kanban, PhoneCall, Trophy, Users } from "lucide-react";
+import { Home, Inbox, Kanban, PhoneCall, Trophy, Users, GitMerge } from "lucide-react";
 
 const NAV = [
   { href: "/crm",            label: "首页",      icon: Home, exact: true },
@@ -11,6 +11,7 @@ const NAV = [
   { href: "/crm/trials",     label: "试听",      icon: PhoneCall },
   { href: "/crm/won",        label: "成交",      icon: Trophy },
   { href: "/crm/customers",  label: "我的客户",  icon: Users },
+  { href: "/crm/dedupe",     label: "查重",      icon: GitMerge },
 ];
 
 export function CrmSidebar() {

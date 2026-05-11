@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { currentUser } from "@/lib/auth";
+import { findDuplicates } from "@/services/dedupe";
 
 const Body = z.object({
   name: z.string().min(1),
@@ -15,6 +16,7 @@ const Body = z.object({
   nextAction: z.string().optional(),
   nextActionDueAt: z.coerce.date().optional(),
   notes: z.string().optional(),
+  force: z.boolean().default(false),  // skip dedupe guard when true
 });
 
 export async function POST(req: Request) {
@@ -26,9 +28,25 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json(parsed.error.format(), { status: 400 });
   }
+  const { force, ...data } = parsed.data;
+
+  // Strong dedupe guard: refuse exact phone OR wechat match unless force=true.
+  if (!force) {
+    const matches = await findDuplicates({
+      phone: data.phone, wechatId: data.wechatId, name: data.name,
+    });
+    const strong = matches.filter((m) => m.matchedOn.some((r) => r === "PHONE" || r === "WECHAT"));
+    if (strong.length > 0) {
+      return NextResponse.json(
+        { error: "DUPLICATE", matches: strong },
+        { status: 409 },
+      );
+    }
+  }
+
   try {
     const lead = await prisma.lead.create({
-      data: { ...parsed.data, salesId: me.id === "demo" ? null : me.id },
+      data: { ...data, salesId: me.id === "demo" ? null : me.id },
     });
     return NextResponse.json(lead);
   } catch (e) {
