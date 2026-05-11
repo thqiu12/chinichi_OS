@@ -5,20 +5,24 @@ import { fmtDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
-const REASON_LABEL: Record<string, string> = {
-  PHONE: "电话相同", WECHAT: "微信相同", NAME: "姓名相同",
-};
-const REASON_CLS: Record<string, string> = {
-  PHONE:  "bg-rose-100 text-rose-700",
-  WECHAT: "bg-rose-100 text-rose-700",
-  NAME:   "bg-amber-100 text-amber-700",
+const REASON_META: Record<string, { label: string; cls: string; section: string; sectionTone: string }> = {
+  WECHAT: { label: "微信相同", cls: "bg-rose-100 text-rose-700",
+            section: "🚨 微信完全相同（几乎肯定是同一人）", sectionTone: "text-rose-700" },
+  PHONE:  { label: "电话相同", cls: "bg-amber-100 text-amber-700",
+            section: "⚠ 电话相同（可能家长共享号）", sectionTone: "text-amber-700" },
+  NAME:   { label: "姓名相同", cls: "bg-slate-100 text-slate-600",
+            section: "ℹ 仅姓名相同（弱可疑）", sectionTone: "text-slate-700" },
 };
 
 export default async function DedupePage() {
   const clusters = await findClusters();
-  const strong = clusters.filter((c) => c.reason !== "NAME");
-  const weak   = clusters.filter((c) => c.reason === "NAME");
-  const totalDupLeads = clusters.reduce((s, c) => s + c.leads.length, 0);
+  const byReason = {
+    WECHAT: clusters.filter((c) => c.reason === "WECHAT"),
+    PHONE:  clusters.filter((c) => c.reason === "PHONE"),
+    NAME:   clusters.filter((c) => c.reason === "NAME"),
+  };
+  const total = clusters.reduce((s, c) => s + c.leads.length, 0);
+  const strongCount = byReason.WECHAT.length + byReason.PHONE.length;
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 space-y-6">
@@ -27,7 +31,11 @@ export default async function DedupePage() {
         <p className="text-sm text-slate-500 mt-1">
           {clusters.length === 0
             ? "✓ 没有发现重复客户。"
-            : `检测到 ${strong.length} 个强重复 · ${weak.length} 个弱可疑（共 ${totalDupLeads} 条 lead）`}
+            : `检测到 ${strongCount} 个强重复 · ${byReason.NAME.length} 个弱可疑（共 ${total} 条 lead）`}
+        </p>
+        <p className="text-xs text-slate-400 mt-1.5">
+          优先级：<b className="text-rose-700">微信</b> &gt; <b className="text-amber-700">电话</b> &gt; <span className="text-slate-600">姓名</span>。
+          同一对客户不会重复出现 —— 已被微信关联的不再列入电话/姓名分组。
         </p>
       </header>
 
@@ -40,16 +48,15 @@ export default async function DedupePage() {
         </div>
       ) : (
         <>
-          {strong.length > 0 && (
-            <Section title="强重复（电话 / 微信完全相同）" tone="rose">
-              {strong.map((c) => <ClusterCard key={cKey(c)} cluster={c} />)}
-            </Section>
-          )}
-          {weak.length > 0 && (
-            <Section title="弱可疑（仅姓名相同）" tone="amber">
-              {weak.map((c) => <ClusterCard key={cKey(c)} cluster={c} />)}
-            </Section>
-          )}
+          {(["WECHAT","PHONE","NAME"] as const).map((r) => {
+            const list = byReason[r];
+            if (list.length === 0) return null;
+            return (
+              <Section key={r} title={REASON_META[r].section} tone={REASON_META[r].sectionTone}>
+                {list.map((c) => <ClusterCard key={cKey(c)} cluster={c} />)}
+              </Section>
+            );
+          })}
 
           <div className="rounded-2xl bg-slate-50 border border-slate-100 p-4 text-xs text-slate-500 leading-relaxed">
             处理方式（MVP）：打开每个客户对比沟通记录 → 把要保留的留下、把重复的状态改为 <b>流失</b>（在 lead 详情页点状态 pill）。
@@ -61,33 +68,26 @@ export default async function DedupePage() {
   );
 }
 
-function cKey(c: Cluster) {
-  return c.reason + "::" + c.key;
-}
+function cKey(c: Cluster) { return c.reason + "::" + c.key; }
 
 function Section({
   title, tone, children,
-}: {
-  title: string; tone: "rose" | "amber"; children: React.ReactNode;
-}) {
+}: { title: string; tone: string; children: React.ReactNode }) {
   return (
     <section>
-      <h2 className={`text-sm font-medium mb-2 ${tone === "rose" ? "text-rose-700" : "text-amber-700"}`}>
-        {title}
-      </h2>
+      <h2 className={`text-sm font-medium mb-2 ${tone}`}>{title}</h2>
       <div className="space-y-3">{children}</div>
     </section>
   );
 }
 
 function ClusterCard({ cluster }: { cluster: Cluster }) {
-  const r = REASON_LABEL[cluster.reason];
-  const rcls = REASON_CLS[cluster.reason];
+  const meta = REASON_META[cluster.reason];
   return (
     <Card>
       <CardHeader>
         <CardTitle>
-          <span className={`mr-2 text-[10px] px-1.5 py-0.5 rounded ${rcls}`}>{r}</span>
+          <span className={`mr-2 text-[10px] px-1.5 py-0.5 rounded ${meta.cls}`}>{meta.label}</span>
           <span className="font-mono text-xs text-slate-500">{cluster.key}</span>
         </CardTitle>
         <span className="text-xs text-slate-500">{cluster.leads.length} 条</span>
@@ -104,7 +104,7 @@ function ClusterCard({ cluster }: { cluster: Cluster }) {
                     <span className="ml-2 text-[11px] text-slate-500">{l.status}</span>
                   </div>
                   <div className="text-[11px] text-slate-500 truncate">
-                    {l.phone ?? "—"} · {l.wechatId ?? "—"} · 概率 {l.conversionProbability}%
+                    微信 {l.wechatId ?? "—"} · 电话 {l.phone ?? "—"} · 概率 {l.conversionProbability}%
                   </div>
                 </div>
                 <div className="text-[11px] text-slate-400 shrink-0">
