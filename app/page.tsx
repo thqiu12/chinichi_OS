@@ -22,7 +22,7 @@ export default function Home() {
           cta="进入内部端 →"
         />
         <Card
-          href="/api/demo/role?as=SALES&next=/crm/leads"
+          href="/api/demo/role?as=SALES&next=/crm"
           color="from-emerald-500 to-emerald-700"
           tag="CRM"
           title="销售"

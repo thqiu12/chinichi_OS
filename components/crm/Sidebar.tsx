@@ -2,9 +2,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Inbox, Kanban, PhoneCall, Trophy, Users } from "lucide-react";
+import { Home, Inbox, Kanban, PhoneCall, Trophy, Users } from "lucide-react";
 
 const NAV = [
+  { href: "/crm",            label: "首页",      icon: Home, exact: true },
   { href: "/crm/leads",      label: "Leads",     icon: Inbox },
   { href: "/crm/pipeline",   label: "Pipeline",  icon: Kanban },
   { href: "/crm/trials",     label: "试听",      icon: PhoneCall },
@@ -25,7 +26,7 @@ export function CrmSidebar() {
       </div>
       <nav className="px-2 space-y-0.5">
         {NAV.map((n) => {
-          const active = path?.startsWith(n.href);
+          const active = n.exact ? path === n.href : path?.startsWith(n.href);
           const Icon = n.icon;
           return (
             <Link key={n.href} href={n.href}

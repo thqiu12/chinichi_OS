@@ -70,16 +70,24 @@ async function main() {
   });
 
   // Leads
+  const leadZhou = await prisma.lead.create({
+    data: {
+      name: "周晓雯", phone: "13800001111", wechatId: "zhouxw",
+      nationality: "CN", targetDegree: "大学院", sourceChannel: "小红书",
+      salesId: sales.id, status: "NEGOTIATING", conversionProbability: 70,
+      nextAction: "本周三试听后跟进", nextActionDueAt: addDays(new Date(), 3),
+    },
+  });
+  const leadLiu = await prisma.lead.create({
+    data: {
+      name: "刘星辰", phone: "13800002222",
+      nationality: "CN", targetDegree: "学部", sourceChannel: "公众号",
+      salesId: sales.id, status: "TRIAL", conversionProbability: 55,
+      nextAction: "确认试听课时间", nextActionDueAt: addDays(new Date(), 1),
+    },
+  });
   await prisma.lead.createMany({
     data: [
-      { name: "周晓雯", phone: "13800001111", wechatId: "zhouxw",
-        nationality: "CN", targetDegree: "大学院", sourceChannel: "小红书",
-        salesId: sales.id, status: "NEGOTIATING", conversionProbability: 70,
-        nextAction: "本周三试听后跟进", nextActionDueAt: addDays(new Date(), 3) },
-      { name: "刘星辰", phone: "13800002222",
-        nationality: "CN", targetDegree: "学部", sourceChannel: "公众号",
-        salesId: sales.id, status: "TRIAL", conversionProbability: 55,
-        nextAction: "确认试听课时间", nextActionDueAt: addDays(new Date(), 1) },
       { name: "高奈奈", phone: "13800003333",
         nationality: "CN", targetDegree: "美术", sourceChannel: "B站",
         salesId: sales.id, status: "CONTACTED", conversionProbability: 30,
@@ -92,6 +100,27 @@ async function main() {
         nationality: "CN", targetDegree: "音乐", sourceChannel: "小红书",
         salesId: sales.id, status: "LOST", conversionProbability: 0,
         notes: "预算不足，转介绍" },
+    ],
+  });
+
+  // LeadActivities — give the hot lead a realistic history
+  await prisma.leadActivity.createMany({
+    data: [
+      { leadId: leadZhou.id, authorId: sales.id, kind: "CALL",
+        content: "首次电话沟通 20 分钟。目标 東大 情報，9 月入学。考虑过京大但更倾向 东京。",
+        result: "意向明确", nextAction: "发课程介绍 + 试听邀请",
+        nextActionDueAt: addDays(new Date(), -8) },
+      { leadId: leadZhou.id, authorId: sales.id, kind: "MESSAGE",
+        content: "发了大学院班介绍 PDF + 周三试听课时间表，已回复确认。",
+        result: "确认参加", nextActionDueAt: addDays(new Date(), -5) },
+      { leadId: leadZhou.id, authorId: sales.id, kind: "TRIAL_LESSON",
+        content: "试听 N1 阅读课，状态投入，与佐藤老师 5 分钟面谈也很积极。",
+        result: "听课体验好", nextAction: "周三本次面咨后再沟通合同",
+        nextActionDueAt: addDays(new Date(), 3) },
+      { leadId: leadLiu.id, authorId: sales.id, kind: "CALL",
+        content: "电话沟通，家长正在考虑预算。",
+        result: "等家长确认", nextAction: "确认试听课时间",
+        nextActionDueAt: addDays(new Date(), 1) },
     ],
   });
 

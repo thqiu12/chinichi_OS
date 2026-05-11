@@ -110,6 +110,15 @@ enum TimelineKind {
   NOTE
 }
 
+enum LeadActivityKind {
+  CALL
+  MESSAGE
+  MEETING
+  TRIAL_LESSON
+  NOTE
+  STATUS_CHANGE
+}
+
 // =============== Org ===============
 model Division {
   id        String       @id @default(cuid())
@@ -168,8 +177,28 @@ model Lead {
   notes                 String?
   convertedStudentId    String?    @unique
   convertedStudent      Student?   @relation(fields: [convertedStudentId], references: [id])
+  activities            LeadActivity[]
   createdAt             DateTime   @default(now())
   updatedAt             DateTime   @updatedAt
+
+  @@index([salesId, status])
+  @@index([nextActionDueAt])
+}
+
+model LeadActivity {
+  id              String           @id @default(cuid())
+  leadId          String
+  lead            Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  authorId        String?
+  kind            LeadActivityKind
+  content         String
+  result          String?
+  nextAction      String?
+  nextActionDueAt DateTime?
+  meta            Json?
+  createdAt       DateTime         @default(now())
+
+  @@index([leadId, createdAt])
 }
 
 // =============== Student ===============
