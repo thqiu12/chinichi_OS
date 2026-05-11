@@ -1,0 +1,393 @@
+// Chinichi Growth OS — Prisma schema
+// 学生 = 升学项目；nextAction = 推进中枢；Timeline = 一切动作的事件流
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============== Enums ===============
+enum Role {
+  ADMIN
+  CAMPUS_HEAD
+  DIVISION_HEAD
+  MENTOR
+  TEACHER
+  STUDENT
+}
+
+enum DivisionKind {
+  ART
+  MUSIC
+  GAKUBU
+  GRADUATE
+  LIBERAL
+  SHARED
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  TRIAL
+  NEGOTIATING
+  WON
+  LOST
+}
+
+enum StudentStage {
+  ONBOARDING
+  FOUNDATION
+  EXAM_PREP
+  PORTFOLIO
+  APPLICATION
+  INTERVIEW
+  ADMITTED
+  GRADUATED
+}
+
+enum RiskLevel {
+  GREEN
+  YELLOW
+  RED
+}
+
+enum TodoOwnerType {
+  STUDENT
+  STAFF
+}
+
+enum TodoStatus {
+  PENDING
+  DOING
+  DONE
+  OVERDUE
+}
+
+enum DeadlineKind {
+  EXAM_REGISTRATION
+  EXAM_DATE
+  APPLICATION_SUBMIT
+  ESSAY_DUE
+  INTERVIEW
+  PAYMENT
+  CUSTOM
+}
+
+enum LessonKind {
+  GROUP
+  ONE_ON_ONE
+  INTERVIEW
+  MEETING
+}
+
+enum LessonStatus {
+  SCHEDULED
+  DONE
+  CANCELED
+  NO_SHOW
+}
+
+enum FeedbackTone {
+  GREAT
+  OKAY
+  RISK
+}
+
+enum TimelineKind {
+  LESSON
+  FOLLOWUP
+  TODO
+  DEADLINE
+  MILESTONE
+  RISK_CHANGE
+  APPLICATION
+  ECHO_LEARNING
+  NOTE
+}
+
+// =============== Org ===============
+model Division {
+  id        String       @id @default(cuid())
+  name      String
+  kind      DivisionKind
+  isShared  Boolean      @default(false)
+  students  Student[]
+  members   Membership[]
+  workflows Workflow[]
+  lessons   Lesson[]
+  createdAt DateTime     @default(now())
+}
+
+model User {
+  id          String       @id @default(cuid())
+  email       String       @unique
+  password    String
+  name        String
+  avatarUrl   String?
+  role        Role
+  wecomUserId String?
+  memberships Membership[]
+  mentees     Student[]    @relation("Mentor")
+  followUps   FollowUp[]
+  feedbacks   LessonFeedback[]
+  staffTodos  Todo[]       @relation("Assignee")
+  lessons     Lesson[]     @relation("Teacher")
+  createdAt   DateTime     @default(now())
+}
+
+model Membership {
+  id         String   @id @default(cuid())
+  userId     String
+  divisionId String
+  role       Role
+  user       User     @relation(fields: [userId], references: [id])
+  division   Division @relation(fields: [divisionId], references: [id])
+
+  @@unique([userId, divisionId, role])
+}
+
+// =============== CRM ===============
+model Lead {
+  id                    String     @id @default(cuid())
+  name                  String
+  phone                 String?
+  wechatId              String?
+  nationality           String?
+  targetDegree          String?
+  sourceChannel         String?
+  salesId               String?
+  status                LeadStatus @default(NEW)
+  conversionProbability Int        @default(0)
+  nextAction            String?
+  nextActionDueAt       DateTime?
+  notes                 String?
+  convertedStudentId    String?    @unique
+  convertedStudent      Student?   @relation(fields: [convertedStudentId], references: [id])
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+}
+
+// =============== Student ===============
+model Student {
+  id              String           @id @default(cuid())
+  name            String
+  nameKana        String?
+  avatarUrl       String?
+  divisionId      String
+  division        Division         @relation(fields: [divisionId], references: [id])
+  mentorId        String?
+  mentor          User?            @relation("Mentor", fields: [mentorId], references: [id])
+
+  stage           StudentStage     @default(ONBOARDING)
+  riskLevel       RiskLevel        @default(GREEN)
+  targetSchool    String?
+  targetMajor     String?
+  enrolledAt      DateTime         @default(now())
+
+  nextAction      String?
+  nextActionDueAt DateTime?
+  lastFollowUpAt  DateTime?
+
+  growthScore     Int              @default(0)
+
+  lead            Lead?
+  todos           Todo[]
+  deadlines       Deadline[]
+  lessons         LessonStudent[]
+  followUps       FollowUp[]
+  feedbacks       LessonFeedback[]
+  events          TimelineEvent[]
+  studentAccount  StudentAccount?
+  echoSnapshots   EchoSnapshot[]
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([divisionId, stage, riskLevel])
+  @@index([mentorId])
+  @@index([nextActionDueAt])
+}
+
+model StudentAccount {
+  id        String   @id @default(cuid())
+  studentId String   @unique
+  student   Student  @relation(fields: [studentId], references: [id])
+  email     String   @unique
+  password  String
+  wecomId   String?
+  createdAt DateTime @default(now())
+}
+
+// =============== FollowUp ===============
+model FollowUp {
+  id              String    @id @default(cuid())
+  studentId       String
+  student         Student   @relation(fields: [studentId], references: [id])
+  mentorId        String
+  mentor          User      @relation(fields: [mentorId], references: [id])
+  content         String
+  tags            String[]
+  nextAction      String
+  nextActionDueAt DateTime
+  riskLevel       RiskLevel @default(GREEN)
+  aiSummary       String?
+  createdAt       DateTime  @default(now())
+
+  @@index([studentId, createdAt])
+}
+
+// =============== Todo ===============
+model Todo {
+  id          String        @id @default(cuid())
+  ownerType   TodoOwnerType
+  studentId   String?
+  student     Student?      @relation(fields: [studentId], references: [id])
+  assigneeId  String?
+  assignee    User?         @relation("Assignee", fields: [assigneeId], references: [id])
+  title       String
+  description String?
+  status      TodoStatus    @default(PENDING)
+  dueAt       DateTime?
+  completedAt DateTime?
+  attachments String[]
+  createdAt   DateTime      @default(now())
+
+  @@index([ownerType, status, dueAt])
+  @@index([studentId])
+  @@index([assigneeId])
+}
+
+// =============== Deadline ===============
+model Deadline {
+  id           String       @id @default(cuid())
+  studentId    String
+  student      Student      @relation(fields: [studentId], references: [id])
+  kind         DeadlineKind
+  title        String
+  dueAt        DateTime
+  remindedT30  Boolean      @default(false)
+  remindedT14  Boolean      @default(false)
+  remindedT7   Boolean      @default(false)
+  remindedT3   Boolean      @default(false)
+  remindedT1   Boolean      @default(false)
+  remindedOver Boolean      @default(false)
+  completedAt  DateTime?
+  meta         Json?
+  createdAt    DateTime     @default(now())
+
+  @@index([dueAt, completedAt])
+  @@index([studentId])
+}
+
+// =============== Lesson ===============
+model Lesson {
+  id         String           @id @default(cuid())
+  kind       LessonKind
+  divisionId String
+  division   Division         @relation(fields: [divisionId], references: [id])
+  teacherId  String
+  teacher    User             @relation("Teacher", fields: [teacherId], references: [id])
+  subject    String
+  startsAt   DateTime
+  endsAt     DateTime
+  classroom  String?
+  status     LessonStatus     @default(SCHEDULED)
+  students   LessonStudent[]
+  feedbacks  LessonFeedback[]
+  createdAt  DateTime         @default(now())
+
+  @@index([startsAt])
+  @@index([teacherId, startsAt])
+}
+
+model LessonStudent {
+  lessonId  String
+  studentId String
+  attended  Boolean @default(true)
+  lesson    Lesson  @relation(fields: [lessonId], references: [id])
+  student   Student @relation(fields: [studentId], references: [id])
+
+  @@id([lessonId, studentId])
+}
+
+// =============== LessonFeedback ===============
+model LessonFeedback {
+  id        String       @id @default(cuid())
+  lessonId  String
+  lesson    Lesson       @relation(fields: [lessonId], references: [id])
+  studentId String
+  student   Student      @relation(fields: [studentId], references: [id])
+  teacherId String
+  teacher   User         @relation(fields: [teacherId], references: [id])
+
+  tone      FeedbackTone
+  problems  String[]
+  nextSteps String[]
+
+  aiBody    String?
+  aiPraise  String?
+
+  createdAt DateTime     @default(now())
+
+  @@index([studentId, createdAt])
+}
+
+// =============== Timeline ===============
+model TimelineEvent {
+  id         String       @id @default(cuid())
+  studentId  String
+  student    Student      @relation(fields: [studentId], references: [id])
+  kind       TimelineKind
+  title      String
+  body       String?
+  meta       Json?
+  actorId    String?
+  occurredAt DateTime     @default(now())
+
+  @@index([studentId, occurredAt])
+}
+
+// =============== Echo / Learning ===============
+model EchoSnapshot {
+  id            String   @id @default(cuid())
+  studentId     String
+  student       Student  @relation(fields: [studentId], references: [id])
+  date          DateTime
+  studyMinutes  Int      @default(0)
+  shadowingDone Int      @default(0)
+  aiConvCount   Int      @default(0)
+  pronScore     Float?
+  streak        Int      @default(0)
+  raw           Json?
+  createdAt     DateTime @default(now())
+
+  @@unique([studentId, date])
+}
+
+// =============== Notification ===============
+model Notification {
+  id          String    @id @default(cuid())
+  toUserId    String?
+  toStudentId String?
+  channel     String
+  title       String
+  body        String
+  link        String?
+  sentAt      DateTime?
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+// =============== Workflow ===============
+model Workflow {
+  id         String   @id @default(cuid())
+  divisionId String
+  division   Division @relation(fields: [divisionId], references: [id])
+  name       String
+  config     Json
+  createdAt  DateTime @default(now())
+}
