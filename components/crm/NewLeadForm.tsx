@@ -26,12 +26,22 @@ type Match = {
   strength: "STRONG" | "WEAK";
 };
 
-export function NewLeadForm() {
+export function NewLeadForm({
+  initialName = "",
+  initialWechat = "",
+  initialPhone = "",
+  forced = false,
+}: {
+  initialName?: string;
+  initialWechat?: string;
+  initialPhone?: string;
+  forced?: boolean;
+} = {}) {
   const router = useRouter();
   const [pending, start] = useTransition();
-  const [name, setName] = useState("");
-  const [wechat, setWechat] = useState("");
-  const [phone, setPhone] = useState("");
+  const [name, setName] = useState(initialName);
+  const [wechat, setWechat] = useState(initialWechat);
+  const [phone, setPhone] = useState(initialPhone);
   const [source, setSource] = useState(SOURCES[0]);
   const [degree, setDegree] = useState(DEGREES[0]);
   const [status, setStatus] = useState<typeof STATUS[number]["v"]>("NEW");
@@ -77,9 +87,10 @@ export function NewLeadForm() {
   const nameDups   = matches.filter((m) => m.matchedOn[0] === "NAME");
   const blockingDups = wechatDups.length > 0 || phoneDups.length > 0;
 
-  function submit(force = false) {
+  function submit(forceArg = false) {
     setErr(null);
     if (!name) return setErr("请填写姓名");
+    const force = forceArg || forced;
     start(async () => {
       const res = await fetch("/api/leads", {
         method: "POST",
@@ -111,6 +122,25 @@ export function NewLeadForm() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-5">
+      {/* Step indicator */}
+      <ol className="flex items-center gap-3 text-xs text-slate-500">
+        <li className="flex items-center gap-2 text-emerald-600">
+          <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[11px]">✓</span>
+          已查重
+        </li>
+        <li className="h-px flex-1 bg-emerald-200" />
+        <li className="flex items-center gap-2 text-emerald-700 font-medium">
+          <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[11px]">2</span>
+          填客户信息
+        </li>
+      </ol>
+
+      {forced && (
+        <div className="rounded-2xl bg-rose-50 border border-rose-200 p-3 text-sm text-rose-800">
+          ⚠ 你已确认要新建一个与现有客户相似的 lead。保存时仍会通过查重防护。
+        </div>
+      )}
+
       {/* Name first */}
       <Field label="姓名 *">
         <input value={name} onChange={(e) => setName(e.target.value)}
