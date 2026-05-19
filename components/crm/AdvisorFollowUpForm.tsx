@@ -73,6 +73,13 @@ export function AdvisorFollowUpForm({ leadId }: { leadId: string }) {
       });
       if (!r.ok) { setErr(await r.text() || "保存失败"); return; }
       setDetail(""); setReminderDays(null); setVisited(false); setTrialed(false);
+
+      // PRD: 签约 stages bridge to the student-side. Auto-route sales to the
+      // convert wizard so the handoff happens right after the contract write.
+      if (isConfirmed && isContract) {
+        router.push(`/crm/leads/${leadId}/convert?fromSign=1`);
+        return;
+      }
       router.refresh();
     });
   }

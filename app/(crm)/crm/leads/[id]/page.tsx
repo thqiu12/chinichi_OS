@@ -150,14 +150,26 @@ export default async function LeadDetailPage({
                 className="rounded-full border border-slate-200 hover:bg-slate-50 px-3 h-9 inline-flex items-center text-sm">
             编辑
           </Link>
-          {lead.resourceAttribute === "VALID" && lead.conversionStage !== "已签约" && (
+          {!lead.convertedStudentId && lead.resourceAttribute === "VALID" && (
             <Link href={`/crm/leads/${lead.id}/convert`}
                   className="rounded-full bg-emerald-600 text-white px-4 h-9 inline-flex items-center text-sm">
-              一键转 Student →
+              交接给学生系统 →
             </Link>
           )}
         </div>
       </header>
+
+      {lead.convertedStudentId && (
+        <div className="mt-4 rounded-2xl bg-emerald-50 border border-emerald-200 p-4 flex items-center justify-between gap-4">
+          <div className="text-sm">
+            🎓 <b>已开启学生页面</b> — 数据已交接给班主任 / 学生端
+          </div>
+          <Link href={`/students/${lead.convertedStudentId}`}
+                className="rounded-full bg-emerald-600 hover:bg-emerald-700 text-white px-4 h-9 inline-flex items-center text-sm shrink-0">
+            进班主任视图 →
+          </Link>
+        </div>
+      )}
 
       <div className="mt-6 grid grid-cols-1 lg:grid-cols-[1fr,320px] gap-6">
         {/* LEFT — follow-up forms + unified timeline */}

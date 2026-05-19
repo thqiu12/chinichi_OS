@@ -444,6 +444,18 @@ model Student {
   targetMajor     String?
   enrolledAt      DateTime         @default(now())
 
+  // ── Snapshotted from Lead at convert-time so 班主任 doesn't have to
+  // cross-reference the CRM for day-to-day work. Later edits to Lead don't
+  // auto-sync; admin can re-run a sync via /api/students/[id]/resync (future).
+  phone           String?
+  wechatId        String?
+  degreeType      String?
+  subjectArea     String?
+  jlpt            JLPTLevel?
+  englishLevel    String?
+  province        String?
+  city            String?
+
   nextAction      String?
   nextActionDueAt DateTime?
   lastFollowUpAt  DateTime?
