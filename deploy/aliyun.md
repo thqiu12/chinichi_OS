@@ -2,6 +2,9 @@
 
 技术栈：**Next.js 14 (standalone build) + PostgreSQL 16 + Nginx**，通过 Docker Compose 单机部署。
 
+> 💡 想最快上线（5 分钟、免备案、东京 edge）？看 [Vercel 路径](./vercel.md)。  
+> 国内服务 / 企业微信 / 国内学生数据合规需求才需要走阿里云方案。
+
 ---
 
 ## 三种部署方式 — 选哪个？
