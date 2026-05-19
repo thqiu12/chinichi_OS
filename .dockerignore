@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.env
+.env.*
+*.log
+.DS_Store
+.vercel
+.turbo
+out
+README.md
+deploy/aliyun.md
+tsconfig.tsbuildinfo
+prisma/migrations/dev.db
