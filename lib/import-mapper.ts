@@ -6,6 +6,26 @@
 // That way "⼿机号" (full-width char), "手机号", " 手机号 " all collapse to "手机号".
 
 import { normalizePhone, normalizeWechat, normalizeName } from "./normalize";
+import { LEGACY_STAGE_MAP } from "./dict";
+
+/**
+ * Translate a stage value coming from legacy data to the canonical 5-value
+ * vocabulary. Returns:
+ *   { stage: string|null, advisorConfirm: "PENDING"|null }
+ * - null stage + PENDING advisor confirm → "新获取" or unrecognized
+ * - mapped stage + null advisor confirm → caller can default advisor to
+ *   INTENT_CONFIRMED (legacy data implies the lead made it to stage tier)
+ */
+function translateLegacyStage(raw: string | null | undefined):
+  { stage: string | null; advisorConfirmHint: string | null } {
+  if (!raw) return { stage: null, advisorConfirmHint: null };
+  const t = raw.normalize("NFKC").trim();
+  if (t === "新获取") return { stage: null, advisorConfirmHint: "PENDING" };
+  const mapped = LEGACY_STAGE_MAP[t];
+  if (mapped) return { stage: mapped, advisorConfirmHint: "INTENT_CONFIRMED" };
+  // unknown — keep raw, let it surface in the UI as an unrecognized value
+  return { stage: t, advisorConfirmHint: null };
+}
 
 export type RawRow = Record<string, any>;
 export type FormatKind = "legacy" | "template" | "unknown";
@@ -248,8 +268,15 @@ export function mapLegacyRow(
   const schoolTierId = resolveSchoolTier(dicts.tiers, pick(row, "院校层次"));
 
   // ── follow-up snapshot ──
-  const advisorConfirm   = mapAdvisorConfirm(pick(row, "顾问确认"));
-  const conversionStage  = pick(row, "有效资源转化阶段", "客户跟进状态");
+  let advisorConfirm     = mapAdvisorConfirm(pick(row, "顾问确认"));
+  const rawStage         = pick(row, "有效资源转化阶段", "客户跟进状态");
+  const { stage: conversionStage, advisorConfirmHint } = translateLegacyStage(rawStage);
+  // If the row only had a legacy stage (no explicit 顾问确认 column), infer:
+  //  - "新获取" → 待判定
+  //  - any 5-value stage → 已确认意向 (the stage implies the lead is in that tier)
+  if (!advisorConfirm && advisorConfirmHint) {
+    advisorConfirm = advisorConfirmHint as any;
+  }
   const advisorDetail    = pick(row, "顾问跟进详情");
   const visitedOffice    = mapBool(pick(row, "是否上门")) ?? false;
   const attendedTrial    = mapBool(pick(row, "是否试听")) ?? false;

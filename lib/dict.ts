@@ -22,31 +22,46 @@ export const ENGLISH_LEVELS = [
 ] as const;
 
 // 有效资源转化阶段
-// PRD 1107 says: 删掉"已确认意向"选项 (now lives in AdvisorConfirmation enum).
-// PRD 0723 says: 已签约/老生续费/输单 are special (单选, no reminder).
-// Includes legacy stages used by the existing CRM data (新获取/长线资源/机会资源/
-// 已出合同待签约) so historical leads keep their semantics after import. New
-// leads should prefer the modern vocabulary.
+// Per PRD: 资源属性=有效 → 顾问确认 ∈ {待判定, 已确认意向, 失效}, and ONLY when
+// 顾问确认=已确认意向 do these 5 conversionStage values apply.
 export const CONVERSION_STAGES = [
-  "新获取",           // legacy — earliest stage
-  "初步接触",
-  "深度沟通",
-  "试听",
-  "意向待定",
-  "长线资源",         // legacy — slow burn, low priority
-  "机会资源",         // legacy — hot opportunity
-  "报价",
-  "已出合同待签约",    // legacy — contract drafted, awaiting signature
-  "已签约",            // → triggers Contract panel
-  "老生续费",          // → triggers Contract panel (isRenewal=true)
-  "输单",              // → triggers lostReason
+  "挖需中",            // probing / discovery
+  "机会资源",          // hot opportunity
+  "长线资源",          // slow burn, long-tail
+  "当月分配当月签约",   // assigned & signed within the same month → triggers Contract
+  "输单",              // lost
 ] as const;
 
-// Stages that should NOT show the reminder/visit/trial UI on a follow-up form
-export const TERMINAL_STAGES = new Set<string>(["已签约", "老生续费", "输单"]);
+// Legacy stage values found in existing CRM exports — map to the new 5-value
+// vocabulary on import. Anything not in this map keeps its raw string but
+// won't show up in the pipeline column grid.
+export const LEGACY_STAGE_MAP: Record<string, string> = {
+  "初步接触":      "挖需中",
+  "深度沟通":      "挖需中",
+  "试听":          "机会资源",
+  "意向待定":      "长线资源",
+  "报价":          "当月分配当月签约",
+  "已出合同待签约": "当月分配当月签约",
+  "已签约":        "当月分配当月签约",
+  "老生续费":      "当月分配当月签约",
+  // Keep these as-is (they're already in the new vocab):
+  "挖需中":            "挖需中",
+  "机会资源":          "机会资源",
+  "长线资源":          "长线资源",
+  "当月分配当月签约":  "当月分配当月签约",
+  "输单":              "输单",
+  // 新获取 doesn't fit the 已确认意向 sub-tier — caller should reset
+  // conversionStage = null and advisorConfirmation = PENDING for these.
+};
 
-// Stages that should trigger the Contract panel
-export const CONTRACT_STAGES = new Set<string>(["已签约", "老生续费"]);
+// Stages that should NOT show the reminder/visit/trial UI on a follow-up form
+// (no further follow-up scheduling once the deal is closed/lost).
+export const TERMINAL_STAGES = new Set<string>(["当月分配当月签约", "输单"]);
+
+// Stages that should trigger the Contract sub-panel. 老生续费 is now modeled as
+// a checkbox on the Contract row (isRenewal=true) since the user moved "renewal"
+// out of the stage enum.
+export const CONTRACT_STAGES = new Set<string>(["当月分配当月签约"]);
 
 // 无效原因 (when resourceAttribute = INVALID)
 export const INVALID_REASONS = [

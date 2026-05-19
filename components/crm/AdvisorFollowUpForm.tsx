@@ -15,7 +15,7 @@ export function AdvisorFollowUpForm({ leadId }: { leadId: string }) {
   const [confirmation, setConfirmation] = useState<typeof CONFIRMS[number]["v"]>("PENDING");
   const [isEffective, setIsEffective] = useState(true);
   const [detail, setDetail] = useState("");
-  const [stage, setStage] = useState<string>("初步接触");
+  const [stage, setStage] = useState<string>("挖需中");
   const [visited, setVisited] = useState(false);
   const [trialed, setTrialed] = useState(false);
   const [expiredReason, setExpiredReason] = useState("");
@@ -30,11 +30,13 @@ export function AdvisorFollowUpForm({ leadId }: { leadId: string }) {
 
   const [err, setErr] = useState<string | null>(null);
 
-  // PRD联动
+  // PRD 三层联动: 顾问确认 = 已确认意向 时才有转化阶段。失效/待判定 时不出阶段。
   const isExpired = confirmation === "EXPIRED";
-  const isTerminal = TERMINAL_STAGES.has(stage);
-  const isContract = CONTRACT_STAGES.has(stage);
-  const isLost = stage === "输单";
+  const isConfirmed = confirmation === "INTENT_CONFIRMED";
+  const effectiveStage = isConfirmed ? stage : undefined;
+  const isTerminal = !!effectiveStage && TERMINAL_STAGES.has(effectiveStage);
+  const isContract = !!effectiveStage && CONTRACT_STAGES.has(effectiveStage);
+  const isLost = effectiveStage === "输单";
   const showReminderVisitTrial = !isExpired && !isTerminal;
 
   function submit() {
@@ -47,7 +49,9 @@ export function AdvisorFollowUpForm({ leadId }: { leadId: string }) {
       advisorConfirmation: confirmation,
       isEffective,
       detail,
-      conversionStage: stage,
+      // Stage only carries meaning when 顾问确认 = 已确认意向. Send undefined
+      // otherwise so the server's lead.conversionStage cache stays correct.
+      conversionStage: isConfirmed ? stage : undefined,
       visitedOffice: showReminderVisitTrial ? visited : false,
       attendedTrial: showReminderVisitTrial ? trialed : false,
       expiredReason: isExpired ? expiredReason : undefined,
@@ -103,10 +107,12 @@ export function AdvisorFollowUpForm({ leadId }: { leadId: string }) {
         className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm min-h-[80px] outline-none focus:border-emerald-400"
       />
 
-      {/* 有效资源转化阶段 */}
-      {!isExpired && (
+      {/* 有效资源转化阶段 — only when 已确认意向 (per PRD hierarchy) */}
+      {isConfirmed && (
         <div>
-          <div className="text-[11px] text-slate-500 mb-1">有效资源转化阶段 (单选)</div>
+          <div className="text-[11px] text-slate-500 mb-1">
+            有效资源转化阶段 <span className="text-slate-400">(单选 · 已确认意向下的子状态)</span>
+          </div>
           <div className="flex flex-wrap gap-1.5">
             {CONVERSION_STAGES.map((s) => (
               <button key={s} type="button" onClick={() => setStage(s)}
