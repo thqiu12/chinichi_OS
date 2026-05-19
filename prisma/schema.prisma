@@ -1,5 +1,7 @@
-// Chinichi Growth OS — Prisma schema
-// 学生 = 升学项目；nextAction = 推进中枢；Timeline = 一切动作的事件流
+// Chinichi Growth OS — Prisma schema (Phase 1: CRM 2.0 PRD alignment)
+// Term: Lead == 资源. Status decomposed into resourceAttribute + conversionStage +
+// advisorConfirmation. Channel/Major/SchoolTier modeled as dictionary trees so
+// the附录2/3 data can live in the DB and grow.
 
 generator client {
   provider = "prisma-client-js"
@@ -17,7 +19,10 @@ enum Role {
   DIVISION_HEAD
   MENTOR
   TEACHER
-  SALES
+  SALES           // 咨询顾问
+  CHANNEL         // 市场-渠道
+  MARKETING       // 市场-品宣
+  HEAD            // 主管 / 校长 / 组长
   STUDENT
 }
 
@@ -28,15 +33,6 @@ enum DivisionKind {
   GRADUATE
   LIBERAL
   SHARED
-}
-
-enum LeadStatus {
-  NEW
-  CONTACTED
-  TRIAL
-  NEGOTIATING
-  WON
-  LOST
 }
 
 enum StudentStage {
@@ -110,6 +106,55 @@ enum TimelineKind {
   NOTE
 }
 
+// ── CRM 2.0 enums ──
+// 资源属性 (was Lead.status): the lifecycle classification of the resource itself.
+enum ResourceAttribute {
+  PENDING   // 待判定
+  VALID     // 有效
+  INVALID   // 无效
+  EXPIRED   // 失效  (driven by AdvisorFollowUp.advisorConfirmation)
+}
+
+// 顾问确认 (咨询顾问跟进页): 已确认意向 / 待判定 / 失效
+enum AdvisorConfirmation {
+  INTENT_CONFIRMED  // 已确认意向
+  PENDING           // 待判定
+  EXPIRED           // 失效
+}
+
+// 身份: 学生 / 家长 / 其他亲友
+enum IdentityKind {
+  STUDENT
+  PARENT
+  KIN
+}
+
+// 日语基础
+enum JLPTLevel {
+  N1
+  N2
+  N3_N4
+  N5_OR_BELOW
+  STUDYING        // 学习中尚未考证
+  UNKNOWN         // 暂未知
+}
+
+// 语校情况
+enum LanguageSchoolStatus {
+  NOT_APPLIED      // 尚未申请语校
+  NO_NEED          // 无语校需求
+  ENROLLED         // 已在语校就读
+  APPLIED_WAITING  // 已申请语校还未入学
+  UNKNOWN          // 暂未知
+}
+
+// 资源来源渠道节点 type
+enum ChannelLevel {
+  L1   // 一级渠道
+  L2   // 二级渠道
+  L3   // 三级渠道/账号
+}
+
 enum LeadActivityKind {
   CALL
   MESSAGE
@@ -146,6 +191,8 @@ model User {
   feedbacks   LessonFeedback[]
   staffTodos  Todo[]       @relation("Assignee")
   lessons     Lesson[]     @relation("Teacher")
+  advisorFollowUps  AdvisorFollowUp[]  @relation("AdvisorFollowUpAuthor")
+  frontendFollowUps FrontendFollowUp[] @relation("FrontendFollowUpAuthor")
   createdAt   DateTime     @default(now())
 }
 
@@ -160,31 +207,206 @@ model Membership {
   @@unique([userId, divisionId, role])
 }
 
-// =============== CRM ===============
-model Lead {
-  id                    String     @id @default(cuid())
-  name                  String
-  phone                 String?
-  wechatId              String?
-  nationality           String?
-  targetDegree          String?
-  sourceChannel         String?
-  salesId               String?
-  status                LeadStatus @default(NEW)
-  conversionProbability Int        @default(0)
-  nextAction            String?
-  nextActionDueAt       DateTime?
-  notes                 String?
-  convertedStudentId    String?    @unique
-  convertedStudent      Student?   @relation(fields: [convertedStudentId], references: [id])
-  activities            LeadActivity[]
-  createdAt             DateTime   @default(now())
-  updatedAt             DateTime   @updatedAt
+// =============== Dictionaries ===============
+// 资源来源 (一/二/三级 channel tree). Self-referencing. Allows custom-added nodes.
+model Channel {
+  id          String        @id @default(cuid())
+  parentId    String?
+  parent      Channel?      @relation("ChannelTree", fields: [parentId], references: [id])
+  children    Channel[]     @relation("ChannelTree")
+  name        String
+  level       ChannelLevel
+  isCustom    Boolean       @default(false)
+  visibleOnly String?       // when set, only visible to this user (机密 mode)
+  order       Int           @default(0)
+  primaryFor  Lead[]        @relation("LeadPrimaryChannel")
+  createdAt   DateTime      @default(now())
 
-  @@index([salesId, status])
-  @@index([nextActionDueAt])
+  @@index([parentId])
+  @@index([level])
 }
 
+// 专业 (一/二级学科 + 具体方向)
+model Major {
+  id       String  @id @default(cuid())
+  parentId String?
+  parent   Major?  @relation("MajorTree", fields: [parentId], references: [id])
+  children Major[] @relation("MajorTree")
+  name     String
+  level    Int     // 1=一级学科, 2=对应专业, 3=具体方向
+  order    Int     @default(0)
+  leads    Lead[]  @relation("LeadTargetMajor")
+
+  @@index([parentId, level])
+}
+
+// 院校层次 (按文理类/艺术类/体育类分组)
+model SchoolTier {
+  id        String  @id @default(cuid())
+  category  String  // "ARTS_SCIENCES" | "ART" | "SPORTS"
+  subgroup  String? // 美术类/非美术类/音乐学院/...
+  name      String
+  order     Int     @default(0)
+  leads     Lead[]  @relation("LeadSchoolTier")
+
+  @@index([category, subgroup])
+}
+
+// =============== CRM ===============
+model Lead {
+  id   String @id @default(cuid())
+  name String
+
+  // — A. 核心信息 —
+  phone        String?
+  phoneAux1    String?
+  phoneAux2    String?
+  wechatId     String?
+  wechatAux1   String?
+  wechatAux2   String?
+  notes        String?            // 其他备注
+  customerTag  String?            // 客户属性标签(旧)
+
+  // — Resource classification (replaces old status) —
+  resourceAttribute   ResourceAttribute    @default(PENDING)
+  invalidReason       String?              // when resourceAttribute = INVALID
+  advisorConfirmation AdvisorConfirmation? // cached from latest AdvisorFollowUp
+  conversionStage     String?              // 有效资源转化阶段, cached from latest AdvisorFollowUp
+
+  // Legacy compatibility (kept temporarily, will be derived in Phase 4 fully)
+  conversionProbability Int      @default(0)
+  nextAction            String?
+  nextActionDueAt       DateTime?
+
+  // — B. 渠道信息 —
+  primaryChannelId    String?
+  primaryChannel      Channel?  @relation("LeadPrimaryChannel", fields: [primaryChannelId], references: [id])
+  channelLocation     String?   // 渠道所在地 (仅渠道部填写)
+  sourceDetail        String?   // 来源详情 (文章/笔记/推荐人)
+  sourceCampus        String?   // 来源所属校区
+  secondaryChannelIds String[]                // 二次/三次渠道历史
+  customChannelName   String?                 // 新增渠道名 (custom input)
+
+  // — C. 资源核心属性 (when VALID) —
+  degreeType          String?               // 升学类型 (附录2.升学类型)
+  subjectArea         String?               // 学科属性 (文/理/美/音/体/日/其他/暂未知)
+  targetMajorId       String?
+  targetMajor         Major?    @relation("LeadTargetMajor", fields: [targetMajorId], references: [id])
+  specificDirection   String?               // 具体方向 (level=3 of Major or free text)
+  currentSchool       String?               // 目前就读院校 (自定义)
+  currentMajor        String?               // 目前就读专业
+  isMajorAligned      Boolean?              // 是否与升学方向专业对口
+  schoolTierId        String?
+  schoolTier          SchoolTier?           @relation("LeadSchoolTier", fields: [schoolTierId], references: [id])
+  grade               String?               // 年级
+  graduationYear      Int?                  // 毕业时间(年)
+  province            String?               // 学生所在省 (省市联动)
+  city                String?
+  identityKind        IdentityKind?         // 身份
+  jlpt                JLPTLevel?            // 日语基础
+  englishLevel        String?               // 英语基础 (托福/托业/雅思/CET4/CET6/无标化成绩)
+  japanStatus         String?               // 赴日情况
+  langSchoolStatus    LanguageSchoolStatus? // 语校情况
+  langSchoolEnrollMonth String?             // 语校入学时间 YYYY-MM
+
+  // — Owners / sales —
+  salesId      String?
+  ownerIds     String[]  // 多负责人 (前端跟进可加)
+
+  // — Lifecycle —
+  convertedStudentId String?  @unique
+  convertedStudent   Student? @relation(fields: [convertedStudentId], references: [id])
+
+  // — Cached for fast filtering —
+  lastAdvisorFollowUpAt  DateTime?
+  lastFrontendFollowUpAt DateTime?
+
+  // — Relations —
+  activities         LeadActivity[]
+  advisorFollowUps   AdvisorFollowUp[]
+  frontendFollowUps  FrontendFollowUp[]
+  contracts          Contract[]
+
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([salesId])
+  @@index([resourceAttribute])
+  @@index([advisorConfirmation])
+  @@index([conversionStage])
+  @@index([lastAdvisorFollowUpAt])
+}
+
+// 咨询顾问跟进 — only SALES can write
+model AdvisorFollowUp {
+  id      String @id @default(cuid())
+  leadId  String
+  lead    Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  authorId String?
+  author   User?  @relation("AdvisorFollowUpAuthor", fields: [authorId], references: [id])
+
+  advisorConfirmation AdvisorConfirmation
+  isEffective         Boolean             @default(true)
+  detail              String
+  conversionStage     String?             // 有效资源转化阶段
+  visitedOffice       Boolean             @default(false)  // 是否上门
+  attendedTrial       Boolean             @default(false)  // 是否试听
+  expiredReason       String?             // 失效原因
+  lostReason          String?             // 输单原因
+
+  reminderDays        Int?                // 跟进提醒 N 天后
+  reminderAt          DateTime?           // (snapshot, independent of new follow-ups)
+
+  contract            Contract?           // optional, when conversionStage = 已签约/老生续费
+
+  createdAt           DateTime            @default(now())
+
+  @@index([leadId, createdAt])
+}
+
+// 前端分配跟进 — only CHANNEL / MARKETING can write
+model FrontendFollowUp {
+  id       String @id @default(cuid())
+  leadId   String
+  lead     Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  authorId String?
+  author   User?  @relation("FrontendFollowUpAuthor", fields: [authorId], references: [id])
+
+  communicationRef String?       // 前端沟通参考
+  assignedCampus   String?       // 分配校区
+  assignedAt       DateTime?     // 分配时间 (= time the owners were added)
+  addedOwnerIds    String[]      // 本次添加的负责人
+  removedOwnerIds  String[]      // 本次移除的负责人
+  invalidReason    String?
+  revisitDetail    String?       // 前端回访详情
+  revisitAt        DateTime?
+  revisitNote      String?       // 前端回访备注
+
+  createdAt        DateTime      @default(now())
+
+  @@index([leadId, createdAt])
+}
+
+// 签约信息 (集成到顾问跟进里, 触发条件: conversionStage = 已签约/老生续费)
+model Contract {
+  id                   String           @id @default(cuid())
+  leadId               String
+  lead                 Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  triggeringFollowUpId String?          @unique
+  triggeringFollowUp   AdvisorFollowUp? @relation(fields: [triggeringFollowUpId], references: [id])
+
+  amount            Decimal?
+  signedAt          DateTime?
+  isRenewal         Boolean   @default(false)    // 老生续费?
+  toLanguageSchool  Boolean                       // 是否转接语校 *
+  languageSchool    String?                       // 语校去向
+  meta              Json?
+
+  createdAt DateTime @default(now())
+}
+
+// Generic legacy LeadActivity (kept for migration smoothness; phase 4 will drop)
 model LeadActivity {
   id              String           @id @default(cuid())
   leadId          String
@@ -252,7 +474,7 @@ model StudentAccount {
   createdAt DateTime @default(now())
 }
 
-// =============== FollowUp ===============
+// =============== FollowUp (student-side, kept) ===============
 model FollowUp {
   id              String    @id @default(cuid())
   studentId       String

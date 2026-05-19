@@ -1,5 +1,6 @@
 import { PrismaClient, type DivisionKind, type StudentStage } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { seedDictionaries } from "./seed-dict";
 
 const prisma = new PrismaClient();
 
@@ -20,6 +21,10 @@ async function main() {
     prisma.echoSnapshot.deleteMany(),
     prisma.notification.deleteMany(),
     prisma.studentAccount.deleteMany(),
+    prisma.contract.deleteMany(),
+    prisma.advisorFollowUp.deleteMany(),
+    prisma.frontendFollowUp.deleteMany(),
+    prisma.leadActivity.deleteMany(),
     prisma.lead.deleteMany(),
     prisma.student.deleteMany(),
     prisma.membership.deleteMany(),
@@ -28,15 +33,19 @@ async function main() {
     prisma.division.deleteMany(),
   ]);
 
+  // ── Dictionaries (Channel / Major / SchoolTier) ──
+  const dict = await seedDictionaries(prisma);
+  console.log(`  ✓ dict seeded: ${dict.channels} channels · ${dict.majors} majors · ${dict.schoolTiers} school tiers`);
+
   // Divisions
   const divs = await Promise.all(
     [
-      { name: "美术",      kind: "ART"      as DivisionKind, isShared: false },
-      { name: "音乐",      kind: "MUSIC"    as DivisionKind, isShared: false },
-      { name: "学部",      kind: "GAKUBU"   as DivisionKind, isShared: false },
-      { name: "大学院",    kind: "GRADUATE" as DivisionKind, isShared: false },
-      { name: "文理科",    kind: "LIBERAL"  as DivisionKind, isShared: false },
-      { name: "日语组",    kind: "SHARED"   as DivisionKind, isShared: true  },
+      { name: "美术",   kind: "ART"      as DivisionKind, isShared: false },
+      { name: "音乐",   kind: "MUSIC"    as DivisionKind, isShared: false },
+      { name: "学部",   kind: "GAKUBU"   as DivisionKind, isShared: false },
+      { name: "大学院", kind: "GRADUATE" as DivisionKind, isShared: false },
+      { name: "文理科", kind: "LIBERAL"  as DivisionKind, isShared: false },
+      { name: "日语组", kind: "SHARED"   as DivisionKind, isShared: true  },
     ].map((d) => prisma.division.create({ data: d })),
   );
   const byKind = Object.fromEntries(divs.map((d) => [d.kind, d]));
@@ -58,6 +67,15 @@ async function main() {
   const sales = await prisma.user.create({
     data: { email: "sales@chinichi.local", password: pw, name: "王 sales", role: "SALES" },
   });
+  const channel = await prisma.user.create({
+    data: { email: "channel@chinichi.local", password: pw, name: "李 渠道", role: "CHANNEL" },
+  });
+  const marketing = await prisma.user.create({
+    data: { email: "mkt@chinichi.local", password: pw, name: "赵 品宣", role: "MARKETING" },
+  });
+  const head = await prisma.user.create({
+    data: { email: "head@chinichi.local", password: pw, name: "陈 校长", role: "HEAD" },
+  });
 
   await prisma.membership.createMany({
     data: [
@@ -69,64 +87,213 @@ async function main() {
     ],
   });
 
-  // Leads
-  const leadZhou = await prisma.lead.create({
-    data: {
-      name: "周晓雯", phone: "13800001111", wechatId: "zhouxw",
-      nationality: "CN", targetDegree: "大学院", sourceChannel: "小红书",
-      salesId: sales.id, status: "NEGOTIATING", conversionProbability: 70,
-      nextAction: "本周三试听后跟进", nextActionDueAt: addDays(new Date(), 3),
-    },
-  });
-  const leadLiu = await prisma.lead.create({
-    data: {
-      name: "刘星辰", phone: "13800002222",
-      nationality: "CN", targetDegree: "学部", sourceChannel: "公众号",
-      salesId: sales.id, status: "TRIAL", conversionProbability: 55,
-      nextAction: "确认试听课时间", nextActionDueAt: addDays(new Date(), 1),
-    },
-  });
-  await prisma.lead.createMany({
-    data: [
-      { name: "高奈奈", phone: "13800003333",
-        nationality: "CN", targetDegree: "美术", sourceChannel: "B站",
-        salesId: sales.id, status: "CONTACTED", conversionProbability: 30,
-        nextAction: "约一次面咨", nextActionDueAt: addDays(new Date(), 5) },
-      { name: "Tanaka Yui", phone: "08012345678",
-        nationality: "JP", targetDegree: "大学院", sourceChannel: "推荐",
-        salesId: sales.id, status: "NEW", conversionProbability: 15,
-        nextAction: "首次电话沟通", nextActionDueAt: addDays(new Date(), 2) },
-      { name: "李铭", phone: "13800005555",
-        nationality: "CN", targetDegree: "音乐", sourceChannel: "小红书",
-        salesId: sales.id, status: "LOST", conversionProbability: 0,
-        notes: "预算不足，转介绍" },
-    ],
-  });
+  // Pick some seed channels by name for the sample leads
+  const ch = async (name: string, level: "L1"|"L2"|"L3" = "L3") =>
+    prisma.channel.findFirst({ where: { name, level } });
 
-  // LeadActivities — give the hot lead a realistic history
-  await prisma.leadActivity.createMany({
-    data: [
-      { leadId: leadZhou.id, authorId: sales.id, kind: "CALL",
-        content: "首次电话沟通 20 分钟。目标 東大 情報，9 月入学。考虑过京大但更倾向 东京。",
-        result: "意向明确", nextAction: "发课程介绍 + 试听邀请",
-        nextActionDueAt: addDays(new Date(), -8) },
-      { leadId: leadZhou.id, authorId: sales.id, kind: "MESSAGE",
-        content: "发了大学院班介绍 PDF + 周三试听课时间表，已回复确认。",
-        result: "确认参加", nextActionDueAt: addDays(new Date(), -5) },
-      { leadId: leadZhou.id, authorId: sales.id, kind: "TRIAL_LESSON",
-        content: "试听 N1 阅读课，状态投入，与佐藤老师 5 分钟面谈也很积极。",
-        result: "听课体验好", nextAction: "周三本次面咨后再沟通合同",
-        nextActionDueAt: addDays(new Date(), 3) },
-      { leadId: leadLiu.id, authorId: sales.id, kind: "CALL",
-        content: "电话沟通，家长正在考虑预算。",
-        result: "等家长确认", nextAction: "确认试听课时间",
-        nextActionDueAt: addDays(new Date(), 1) },
-    ],
-  });
+  const chXiaoHongShu = await ch("小红书", "L2");
+  const chZhirisuLearn = await ch("@知日塾日本留学", "L3");
+  const chChiart = await ch("@CHIART知日美术", "L3");
+  const chReferralEmp = await ch("员工推荐", "L2");
+  const chXueLaoshi = await ch("薛老师", "L2");
 
-  // Students
+  // Sample majors
+  const majorJobao = await prisma.major.findFirst({ where: { name: "情报学", level: 2 } });
+  const majorEdu   = await prisma.major.findFirst({ where: { name: "教育学", level: 2 } });
+  const majorIllu  = await prisma.major.findFirst({ where: { name: "插画",   level: 2 } });
+
+  // Sample school tiers
+  const tier211   = await prisma.schoolTier.findFirst({ where: { name: "211及以上" } });
+  const tierArt   = await prisma.schoolTier.findFirst({ where: { name: "美术类" } });
+  const tierJpHs  = await prisma.schoolTier.findFirst({ where: { name: "日本学校（所有学段）" } });
+
+  // ── Leads ──
   const now = new Date();
 
+  const leadZhou = await prisma.lead.create({
+    data: {
+      name: "周晓雯",
+      phone: "13800001111", wechatId: "zhouxw",
+      resourceAttribute: "VALID",
+      advisorConfirmation: "INTENT_CONFIRMED",
+      conversionStage: "意向待定",
+      primaryChannelId: chZhirisuLearn?.id,
+      sourceDetail: "笔记《东大情报学院申请攻略》评论区",
+      sourceCampus: "成都",
+      degreeType: "大学院-修士",
+      subjectArea: "理科",
+      targetMajorId: majorJobao?.id,
+      schoolTierId: tier211?.id,
+      grade: "大四",
+      graduationYear: 2026,
+      province: "四川", city: "成都",
+      identityKind: "STUDENT",
+      jlpt: "N2",
+      englishLevel: "CET6",
+      japanStatus: "尚未赴日",
+      langSchoolStatus: "NO_NEED",
+      salesId: sales.id,
+      ownerIds: [sales.id],
+      conversionProbability: 70,
+      nextAction: "本周三试听后跟进",
+      nextActionDueAt: addDays(now, 3),
+      lastAdvisorFollowUpAt: addDays(now, -2),
+    },
+  });
+
+  const leadLiu = await prisma.lead.create({
+    data: {
+      name: "刘星辰",
+      phone: "13800002222", wechatId: "liu_xingchen",
+      resourceAttribute: "VALID",
+      advisorConfirmation: "PENDING",
+      conversionStage: "试听",
+      primaryChannelId: (await ch("公众号", "L3"))?.id ?? chXiaoHongShu?.id,
+      degreeType: "学部",
+      subjectArea: "文科",
+      targetMajorId: majorEdu?.id,
+      schoolTierId: tier211?.id,
+      grade: "高三", graduationYear: 2027,
+      province: "上海", city: "上海",
+      identityKind: "STUDENT",
+      jlpt: "N3_N4",
+      langSchoolStatus: "NOT_APPLIED",
+      salesId: sales.id,
+      ownerIds: [sales.id],
+      conversionProbability: 55,
+      nextAction: "确认试听课时间", nextActionDueAt: addDays(now, 1),
+    },
+  });
+
+  await prisma.lead.create({
+    data: {
+      name: "高奈奈",
+      phone: "13800003333", wechatId: "gaonana",
+      resourceAttribute: "VALID",
+      advisorConfirmation: "PENDING",
+      conversionStage: "初步接触",
+      primaryChannelId: chChiart?.id,
+      degreeType: "学部",
+      subjectArea: "美术",
+      targetMajorId: majorIllu?.id,
+      schoolTierId: tierArt?.id,
+      grade: "高三", graduationYear: 2027,
+      province: "广东", city: "广州",
+      identityKind: "STUDENT",
+      jlpt: "STUDYING",
+      langSchoolStatus: "NOT_APPLIED",
+      salesId: sales.id,
+      ownerIds: [sales.id, marketing.id],
+      conversionProbability: 30,
+      nextAction: "约一次面咨", nextActionDueAt: addDays(now, 5),
+    },
+  });
+
+  await prisma.lead.create({
+    data: {
+      name: "Tanaka Yui",
+      phone: "08012345678", wechatId: "tanaka_yui",
+      resourceAttribute: "PENDING",
+      primaryChannelId: chReferralEmp?.id,
+      degreeType: "大学院-修士",
+      subjectArea: "暂未知",
+      schoolTierId: tierJpHs?.id,
+      identityKind: "STUDENT",
+      jlpt: "N1",
+      langSchoolStatus: "ENROLLED",
+      langSchoolEnrollMonth: "2025-04",
+      salesId: sales.id, ownerIds: [sales.id],
+      conversionProbability: 15,
+      nextAction: "首次电话沟通", nextActionDueAt: addDays(now, 2),
+    },
+  });
+
+  await prisma.lead.create({
+    data: {
+      name: "李铭",
+      phone: "13800005555", wechatId: "liming_music",
+      resourceAttribute: "INVALID",
+      invalidReason: "学生需求不合理",
+      primaryChannelId: chXiaoHongShu?.id,
+      degreeType: "大学院-修士",
+      subjectArea: "音乐",
+      salesId: sales.id, ownerIds: [sales.id],
+      notes: "预算不足，转介绍",
+    },
+  });
+
+  await prisma.lead.create({
+    data: {
+      name: "陈思琪",
+      wechatId: "chensiqi_2025",
+      resourceAttribute: "VALID",
+      advisorConfirmation: "EXPIRED",
+      conversionStage: "深度沟通",
+      primaryChannelId: chXueLaoshi?.id,
+      sourceDetail: "薛老师介绍·芥末机构",
+      degreeType: "学部",
+      subjectArea: "文科",
+      salesId: sales.id,
+      ownerIds: [sales.id],
+      conversionProbability: 10,
+      nextAction: "添加微信", nextActionDueAt: addDays(now, 0),
+    },
+  });
+
+  await prisma.lead.create({
+    data: {
+      name: "王宇翔",
+      phone: "13800007777", wechatId: "wangyuxiang",
+      resourceAttribute: "VALID",
+      advisorConfirmation: "INTENT_CONFIRMED",
+      conversionStage: "已签约",
+      primaryChannelId: chReferralEmp?.id,
+      degreeType: "大学院-修士",
+      subjectArea: "理科",
+      salesId: sales.id, ownerIds: [sales.id],
+      conversionProbability: 100,
+      lastAdvisorFollowUpAt: addDays(now, -5),
+    },
+  });
+
+  // AdvisorFollowUps on 周晓雯
+  await prisma.advisorFollowUp.createMany({
+    data: [
+      { leadId: leadZhou.id, authorId: sales.id,
+        advisorConfirmation: "PENDING", isEffective: true,
+        detail: "首次电话沟通 20 分钟。目标 東大 情報，9 月入学。考虑过京大但更倾向 东京。",
+        conversionStage: "初步接触",
+        createdAt: addDays(now, -8) },
+      { leadId: leadZhou.id, authorId: sales.id,
+        advisorConfirmation: "PENDING", isEffective: true,
+        detail: "发了大学院班介绍 PDF + 周三试听课时间表，已回复确认。",
+        conversionStage: "试听",
+        createdAt: addDays(now, -5) },
+      { leadId: leadZhou.id, authorId: sales.id,
+        advisorConfirmation: "INTENT_CONFIRMED", isEffective: true,
+        detail: "试听 N1 阅读课，状态投入，与佐藤老师 5 分钟面谈也很积极。",
+        conversionStage: "意向待定",
+        attendedTrial: true,
+        createdAt: addDays(now, -2) },
+    ],
+  });
+
+  // FrontendFollowUp on 高奈奈
+  await prisma.frontendFollowUp.create({
+    data: {
+      leadId: (await prisma.lead.findFirstOrThrow({ where: { name: "高奈奈" } })).id,
+      authorId: marketing.id,
+      communicationRef: "小红书私信→引导添加企业微信→约面咨",
+      assignedCampus: "广州",
+      assignedAt: addDays(now, -3),
+      addedOwnerIds: [marketing.id],
+      revisitDetail: "有效ing→机会资源",
+      revisitAt: addDays(now, -1),
+      revisitNote: "对插画专业感兴趣，需要看作品",
+    },
+  });
+
+  // Sample Student (kept from previous seed shape; minimal)
   const studentLi = await prisma.student.create({
     data: {
       name: "李小明", nameKana: "リ ショウメイ",
@@ -141,35 +308,6 @@ async function main() {
     },
   });
 
-  const studentChen = await prisma.student.create({
-    data: {
-      name: "陈雨欣",
-      divisionId: byKind.ART.id, mentorId: mentor.id,
-      stage: "PORTFOLIO",
-      riskLevel: "YELLOW",
-      targetSchool: "武蔵野美術大学",
-      growthScore: 38,
-      nextAction: "本周提交作品集 v1",
-      nextActionDueAt: addDays(now, 4),
-      lastFollowUpAt: addDays(now, -8),
-    },
-  });
-
-  const studentZhang = await prisma.student.create({
-    data: {
-      name: "张子轩",
-      divisionId: byKind.GAKUBU.id, mentorId: mentor.id,
-      stage: "FOUNDATION",
-      riskLevel: "RED",
-      targetSchool: "早稲田大学",
-      growthScore: 18,
-      nextAction: "约见家长沟通近期状态",
-      nextActionDueAt: addDays(now, 0),
-      lastFollowUpAt: addDays(now, -16),
-    },
-  });
-
-  // Student account for the demo student
   await prisma.studentAccount.create({
     data: {
       studentId: studentLi.id,
@@ -178,104 +316,7 @@ async function main() {
     },
   });
 
-  // Deadlines (one full template applied for each student)
-  const dlSeed = [
-    { sid: studentLi.id, kind: "EXAM_REGISTRATION", title: "JLPT N1 报名", offset: 5  },
-    { sid: studentLi.id, kind: "EXAM_DATE",         title: "JLPT N1 考试", offset: 60 },
-    { sid: studentLi.id, kind: "ESSAY_DUE",         title: "研究计划书 v2", offset: 14 },
-    { sid: studentChen.id,kind: "ESSAY_DUE",        title: "作品集 v1", offset: 4  },
-    { sid: studentChen.id,kind: "INTERVIEW",        title: "Demo 面试", offset: 30 },
-    { sid: studentZhang.id,kind: "EXAM_REGISTRATION",title: "EJU 报名", offset: 2  },
-    { sid: studentZhang.id,kind: "ESSAY_DUE",       title: "小论文范文", offset: 21 },
-  ] as const;
-  await prisma.deadline.createMany({
-    data: dlSeed.map((d) => ({
-      studentId: d.sid, kind: d.kind, title: d.title,
-      dueAt: addDays(now, d.offset),
-    })),
-  });
-
-  // Todos
-  await prisma.todo.createMany({
-    data: [
-      { ownerType: "STUDENT", studentId: studentLi.id, title: "研究计划书第二节修改", dueAt: addDays(now, 1) },
-      { ownerType: "STUDENT", studentId: studentLi.id, title: "JLPT 模考阅读 1 套",   dueAt: addDays(now, 3) },
-      { ownerType: "STUDENT", studentId: studentChen.id, title: "上传作品集 5 张",   dueAt: addDays(now, 4) },
-      { ownerType: "STUDENT", studentId: studentZhang.id, title: "完成单词本 200 词", dueAt: addDays(now, -1), status: "OVERDUE" },
-      { ownerType: "STAFF", assigneeId: mentor.id, studentId: studentZhang.id,
-        title: "联系家长沟通", dueAt: addDays(now, 0) },
-      { ownerType: "STAFF", assigneeId: mentor.id, studentId: studentChen.id,
-        title: "面谈：作品集进度", dueAt: addDays(now, 1) },
-    ],
-  });
-
-  // Lessons (today)
-  const todayBase = new Date();
-  todayBase.setHours(10, 0, 0, 0);
-  const l1 = await prisma.lesson.create({
-    data: {
-      kind: "GROUP", divisionId: byKind.SHARED.id, teacherId: teacherJp.id,
-      subject: "JLPT N1 阅读", classroom: "201",
-      startsAt: todayBase, endsAt: addDays(todayBase, 0.0625),
-    },
-  });
-  await prisma.lessonStudent.createMany({
-    data: [
-      { lessonId: l1.id, studentId: studentLi.id },
-      { lessonId: l1.id, studentId: studentChen.id },
-    ],
-  });
-
-  const todayPm = new Date();
-  todayPm.setHours(14, 30, 0, 0);
-  const l2 = await prisma.lesson.create({
-    data: {
-      kind: "ONE_ON_ONE", divisionId: byKind.ART.id, teacherId: teacherArt.id,
-      subject: "作品集 1on1", classroom: "Atelier A",
-      startsAt: todayPm, endsAt: addDays(todayPm, 0.0625),
-    },
-  });
-  await prisma.lessonStudent.create({
-    data: { lessonId: l2.id, studentId: studentChen.id },
-  });
-
-  // Past feedback
-  await prisma.lessonFeedback.create({
-    data: {
-      lessonId: l1.id, studentId: studentLi.id, teacherId: teacherJp.id,
-      tone: "GREAT", problems: ["阅读速度"], nextSteps: ["语法 65 题"],
-      aiBody: "今天阅读速度比上节课提升了一档，长难句的拆解明显熟练。下一步把语法 65 题做完，把错题归类到那个红色本子上。",
-      aiPraise: "你今天明显更稳了，继续保持。",
-    },
-  });
-
-  // FollowUps
-  await prisma.followUp.create({
-    data: {
-      studentId: studentLi.id, mentorId: mentor.id,
-      content: "学生研究方向清晰，本周开始进入第二章写作。情绪稳定。",
-      tags: ["状态稳定", "推进顺利"],
-      nextAction: "周三过第二章方法论 800 字初稿",
-      nextActionDueAt: addDays(now, 3),
-      riskLevel: "GREEN",
-      aiSummary: "稳定推进，本周进入第二章写作。",
-    },
-  });
-
-  // Timeline seeds
-  await prisma.timelineEvent.createMany({
-    data: [
-      { studentId: studentLi.id,  kind: "MILESTONE", title: "通过 N2 模考",       occurredAt: addDays(now, -10) },
-      { studentId: studentLi.id,  kind: "FOLLOWUP",  title: "佐藤先生跟进了一次",  occurredAt: addDays(now, -2),
-        body: "稳定推进，本周进入第二章写作。" },
-      { studentId: studentChen.id,kind: "RISK_CHANGE", title: "风险升级到 YELLOW", body: "已超过 7 天未跟进",
-        occurredAt: addDays(now, -1) },
-      { studentId: studentZhang.id,kind: "RISK_CHANGE", title: "风险升级到 RED",   body: "已超过 14 天未跟进",
-        occurredAt: addDays(now, 0) },
-    ],
-  });
-
-  // Echo snapshots — 7 days
+  // Echo snapshots — 7 days for the student demo
   for (let i = 6; i >= 0; i--) {
     const d = addDays(now, -i);
     const day = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -292,22 +333,14 @@ async function main() {
     });
   }
 
-  // Workflow stub
-  await prisma.workflow.create({
-    data: {
-      divisionId: byKind.GRADUATE.id,
-      name: "大学院默认 workflow",
-      config: {
-        stages: ["ONBOARDING","FOUNDATION","EXAM_PREP","APPLICATION","INTERVIEW","ADMITTED"],
-      },
-    },
-  });
-
   console.log("✓ seed done");
-  console.log("  · admin:   admin@chinichi.local / admin1234");
-  console.log("  · mentor:  mentor@chinichi.local / admin1234");
-  console.log("  · sales:   sales@chinichi.local  / admin1234");
-  console.log("  · student: student@chinichi.local / admin1234");
+  console.log("  · admin:     admin@chinichi.local / admin1234");
+  console.log("  · mentor:    mentor@chinichi.local / admin1234");
+  console.log("  · sales:     sales@chinichi.local / admin1234");
+  console.log("  · channel:   channel@chinichi.local / admin1234");
+  console.log("  · marketing: mkt@chinichi.local / admin1234");
+  console.log("  · head:      head@chinichi.local / admin1234");
+  console.log("  · student:   student@chinichi.local / admin1234");
 }
 
 main()

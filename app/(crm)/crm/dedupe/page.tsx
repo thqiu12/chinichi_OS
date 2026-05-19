@@ -5,6 +5,10 @@ import { fmtDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
+const ATTR_LABEL: Record<string, string> = {
+  PENDING: "待判定", VALID: "有效", INVALID: "无效", EXPIRED: "失效",
+};
+
 const REASON_META: Record<string, { label: string; cls: string; section: string; sectionTone: string }> = {
   WECHAT: { label: "微信相同", cls: "bg-rose-100 text-rose-700",
             section: "🚨 微信完全相同（几乎肯定是同一人）", sectionTone: "text-rose-700" },
@@ -99,9 +103,12 @@ function ClusterCard({ cluster }: { cluster: Cluster }) {
               <Link href={`/crm/leads/${l.id}`}
                     className="flex items-center justify-between gap-3 py-2.5 hover:bg-slate-50 -mx-2 px-2 rounded-lg">
                 <div className="min-w-0">
-                  <div className="text-sm font-medium">
+                  <div className="text-sm font-medium flex items-center gap-1.5 flex-wrap">
                     {l.name}
-                    <span className="ml-2 text-[11px] text-slate-500">{l.status}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">{ATTR_LABEL[l.resourceAttribute] ?? l.resourceAttribute}</span>
+                    {l.conversionStage && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">{l.conversionStage}</span>
+                    )}
                   </div>
                   <div className="text-[11px] text-slate-500 truncate">
                     微信 {l.wechatId ?? "—"} · 电话 {l.phone ?? "—"} · 概率 {l.conversionProbability}%

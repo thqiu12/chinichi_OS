@@ -2,9 +2,11 @@ import Link from "next/link";
 import { prisma, safe } from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Avatar } from "@/components/ui/Avatar";
-import { LeadStatusPill, LeadInlineField, LeadProbabilitySlider } from "@/components/crm/LeadHeader";
+import { LeadAttributePill, LeadInlineField, LeadProbabilitySlider } from "@/components/crm/LeadHeader";
 import { ActivityLogger } from "@/components/crm/ActivityLogger";
 import { fmtDate, fmtDateTime } from "@/lib/format";
+import { conversionStageLabel } from "@/lib/dict";
+import { Badge } from "@/components/ui/Badge";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +28,10 @@ export default async function LeadDetailPage({
     () =>
       prisma.lead.findUnique({
         where: { id: params.id },
-        include: { activities: { orderBy: { createdAt: "desc" }, take: 50 } },
+        include: {
+          activities: { orderBy: { createdAt: "desc" }, take: 50 },
+          primaryChannel: true,
+        },
       }),
     null,
   );
@@ -41,15 +46,21 @@ export default async function LeadDetailPage({
       <header className="mt-3 flex items-start gap-4">
         <Avatar name={lead.name} size={52} />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl font-semibold tracking-tight">{lead.name}</h1>
-            <LeadStatusPill leadId={lead.id} initial={lead.status as any} />
+            <LeadAttributePill leadId={lead.id} initial={lead.resourceAttribute as any} />
+            {lead.conversionStage && (() => {
+              const s = conversionStageLabel(lead.conversionStage);
+              return <Badge className={s.cls}>{s.label}</Badge>;
+            })()}
           </div>
           <p className="text-sm text-slate-500 mt-0.5">
-            {lead.phone ?? "无电话"} · {lead.sourceChannel ?? "无渠道"} · {lead.targetDegree ?? "无目标"}
+            微信 {lead.wechatId ?? "—"} · 电话 {lead.phone ?? "—"} ·
+            {" "}渠道 {lead.primaryChannel?.name ?? "—"} ·
+            {" "}升学类型 {lead.degreeType ?? "—"}
           </p>
         </div>
-        {lead.status !== "WON" && lead.status !== "LOST" && (
+        {lead.resourceAttribute === "VALID" && lead.conversionStage !== "已签约" && (
           <Link href={`/crm/leads/${lead.id}/convert`}
                 className="rounded-full bg-emerald-600 text-white px-4 h-9 inline-flex items-center text-sm shrink-0">
             一键转 Student →
@@ -111,14 +122,14 @@ export default async function LeadDetailPage({
               <Editable label="微信">
                 <LeadInlineField leadId={lead.id} field="wechatId" initial={lead.wechatId} placeholder="点击填写" />
               </Editable>
-              <Editable label="目标">
-                <LeadInlineField leadId={lead.id} field="targetDegree" initial={lead.targetDegree} placeholder="点击填写" />
+              <Editable label="升学类型">
+                <LeadInlineField leadId={lead.id} field="degreeType" initial={lead.degreeType} placeholder="点击填写" />
               </Editable>
-              <Editable label="渠道">
-                <LeadInlineField leadId={lead.id} field="sourceChannel" initial={lead.sourceChannel} placeholder="点击填写" />
+              <Editable label="学科属性">
+                <LeadInlineField leadId={lead.id} field="subjectArea" initial={lead.subjectArea} placeholder="点击填写" />
               </Editable>
-              <Editable label="国籍">
-                <LeadInlineField leadId={lead.id} field="nationality" initial={lead.nationality} placeholder="CN / JP / ..." />
+              <Editable label="所在城市">
+                <LeadInlineField leadId={lead.id} field="city" initial={lead.city} placeholder="点击填写" />
               </Editable>
             </CardContent>
           </Card>

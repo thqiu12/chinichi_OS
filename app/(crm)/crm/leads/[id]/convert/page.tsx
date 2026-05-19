@@ -41,12 +41,12 @@ export default async function ConvertPage({
     <div className="mx-auto max-w-2xl px-6 py-8">
       <Link href={`/crm/leads/${lead.id}`} className="text-sm text-slate-500">← 返回 Lead</Link>
       <h1 className="text-2xl font-semibold tracking-tight mt-2">转 Student</h1>
-      <p className="text-sm text-slate-500 mt-1 mb-6">{lead.name} · {lead.targetDegree ?? "—"} · {lead.sourceChannel ?? "—"}</p>
+      <p className="text-sm text-slate-500 mt-1 mb-6">{lead.name} · {lead.degreeType ?? "—"}</p>
 
       <ConvertWizard
         leadId={lead.id}
         leadName={lead.name}
-        defaultTarget={lead.targetDegree}
+        defaultTarget={lead.degreeType}
         divisions={divisions}
         mentors={mentors}
       />

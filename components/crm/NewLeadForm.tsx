@@ -4,11 +4,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 
-const STATUS = [
-  { v: "NEW", label: "新" },
-  { v: "CONTACTED", label: "已联系" },
-  { v: "TRIAL", label: "试听" },
-  { v: "NEGOTIATING", label: "意向" },
+const ATTRS = [
+  { v: "PENDING",  label: "待判定" },
+  { v: "VALID",    label: "有效"   },
+  { v: "INVALID",  label: "无效"   },
+  { v: "EXPIRED",  label: "失效"   },
 ] as const;
 
 const SOURCES = ["小红书","公众号","B站","抖音","推荐","搜索","线下活动","其他"];
@@ -20,10 +20,17 @@ const REASON_LABEL: Record<string, string> = {
 
 type Match = {
   id: string; name: string; phone: string | null; wechatId: string | null;
-  status: string; salesId: string | null; conversionProbability: number;
+  resourceAttribute: string;
+  conversionStage: string | null;
+  advisorConfirmation: string | null;
+  salesId: string | null; conversionProbability: number;
   createdAt: string;
   matchedOn: ("WECHAT" | "PHONE" | "NAME")[];
   strength: "STRONG" | "WEAK";
+};
+
+const ATTR_LABEL: Record<string, string> = {
+  PENDING: "待判定", VALID: "有效", INVALID: "无效", EXPIRED: "失效",
 };
 
 export function NewLeadForm({
@@ -44,7 +51,7 @@ export function NewLeadForm({
   const [phone, setPhone] = useState(initialPhone);
   const [source, setSource] = useState(SOURCES[0]);
   const [degree, setDegree] = useState(DEGREES[0]);
-  const [status, setStatus] = useState<typeof STATUS[number]["v"]>("NEW");
+  const [attr, setAttr] = useState<typeof ATTRS[number]["v"]>("PENDING");
   const [prob, setProb] = useState(20);
   const [nextAction, setNextAction] = useState("首次电话沟通");
   const [due, setDue] = useState(() => {
@@ -97,8 +104,12 @@ export function NewLeadForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name, phone, wechatId: wechat,
-          sourceChannel: source, targetDegree: degree,
-          status, conversionProbability: prob,
+          // Phase 1: source / degree from form become free-text placeholders.
+          // Phase 3 will hook them up to Channel / DegreeType dictionaries.
+          sourceDetail: `渠道: ${source}`,
+          degreeType: degree,
+          resourceAttribute: attr,
+          conversionProbability: prob,
           nextAction, nextActionDueAt: new Date(due).toISOString(),
           notes, force,
         }),
@@ -185,12 +196,12 @@ export function NewLeadForm({
         </div>
       </Field>
 
-      <Field label="阶段">
+      <Field label="资源属性">
         <div className="flex flex-wrap gap-2">
-          {STATUS.map((s) => (
-            <button key={s.v} type="button" onClick={() => setStatus(s.v)}
+          {ATTRS.map((s) => (
+            <button key={s.v} type="button" onClick={() => setAttr(s.v)}
                     className={`rounded-full px-3 h-8 text-xs border transition ${
-                      status === s.v
+                      attr === s.v
                         ? "bg-emerald-600 text-white border-emerald-600"
                         : "bg-white text-slate-600 border-slate-200"
                     }`}>{s.label}</button>
@@ -315,9 +326,12 @@ function MatchRow({ m }: { m: Match }) {
       <Link href={`/crm/leads/${m.id}`} target="_blank"
             className="flex items-center justify-between gap-2 rounded-xl bg-white border border-white/60 px-3 py-2 hover:border-slate-200">
         <div className="min-w-0">
-          <div className="text-sm font-medium truncate">
+          <div className="text-sm font-medium truncate flex items-center gap-1.5 flex-wrap">
             {m.name}
-            <span className="ml-2 text-[11px] text-slate-500">{m.status}</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">{ATTR_LABEL[m.resourceAttribute] ?? m.resourceAttribute}</span>
+            {m.conversionStage && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">{m.conversionStage}</span>
+            )}
           </div>
           <div className="text-[11px] text-slate-500 truncate">
             微信 {m.wechatId ?? "—"} · 电话 {m.phone ?? "—"} · 概率 {m.conversionProbability}%

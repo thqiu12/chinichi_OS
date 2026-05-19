@@ -5,15 +5,17 @@ import { useRouter } from "next/navigation";
 
 type Match = {
   id: string; name: string; phone: string | null; wechatId: string | null;
-  status: string; salesId: string | null; conversionProbability: number;
+  resourceAttribute: string;
+  conversionStage: string | null;
+  advisorConfirmation: string | null;
+  salesId: string | null; conversionProbability: number;
   createdAt: string;
   matchedOn: ("WECHAT" | "PHONE" | "NAME")[];
   strength: "STRONG" | "WEAK";
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  NEW: "新", CONTACTED: "已联系", TRIAL: "试听",
-  NEGOTIATING: "意向", WON: "成交", LOST: "流失",
+const ATTR_LABEL: Record<string, string> = {
+  PENDING: "待判定", VALID: "有效", INVALID: "无效", EXPIRED: "失效",
 };
 
 export function DedupeGate() {
@@ -233,9 +235,12 @@ function MatchRow({ m }: { m: Match }) {
     <li>
       <div className="flex items-center justify-between gap-2 rounded-xl bg-white border border-white/60 px-3 py-2">
         <div className="min-w-0">
-          <div className="text-sm font-medium truncate">
+          <div className="text-sm font-medium truncate flex items-center gap-1.5 flex-wrap">
             {m.name}
-            <span className="ml-2 text-[11px] text-slate-500">{STATUS_LABEL[m.status] ?? m.status}</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">{ATTR_LABEL[m.resourceAttribute] ?? m.resourceAttribute}</span>
+            {m.conversionStage && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">{m.conversionStage}</span>
+            )}
           </div>
           <div className="text-[11px] text-slate-500 truncate">
             微信 {m.wechatId ?? "—"} · 电话 {m.phone ?? "—"} · 概率 {m.conversionProbability}%

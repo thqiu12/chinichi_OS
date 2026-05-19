@@ -32,7 +32,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
           name: lead.name,
           divisionId: data.divisionId,
           mentorId: data.mentorId,
-          targetSchool: data.targetSchool ?? lead.targetDegree ?? undefined,
+          targetSchool: data.targetSchool ?? lead.degreeType ?? undefined,
           targetMajor: data.targetMajor,
           stage: "ONBOARDING",
           nextAction: "完成入学面谈，确认升学目标",
@@ -42,7 +42,11 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
       await tx.lead.update({
         where: { id: lead.id },
-        data: { status: "WON", convertedStudentId: student.id },
+        data: {
+          conversionStage: "已签约",
+          resourceAttribute: "VALID",
+          convertedStudentId: student.id,
+        },
       });
 
       const email = data.studentEmail ?? `${lead.phone ?? student.id}@chinichi.local`;

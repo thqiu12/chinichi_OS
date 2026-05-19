@@ -8,9 +8,9 @@ export default async function WonPage() {
   const won = await safe(
     () =>
       prisma.lead.findMany({
-        where: { status: "WON" },
+        where: { conversionStage: { in: ["已签约", "老生续费"] } },
         orderBy: { updatedAt: "desc" },
-        include: { convertedStudent: true },
+        include: { convertedStudent: true, primaryChannel: true },
       }),
     [],
   );
@@ -26,9 +26,11 @@ export default async function WonPage() {
           {won.map((l) => (
             <li key={l.id} className="px-4 py-3 flex justify-between text-sm">
               <div>
-                <div className="font-medium">{l.name}</div>
+                <Link href={`/crm/leads/${l.id}`} className="font-medium hover:underline">
+                  {l.name}
+                </Link>
                 <div className="text-[11px] text-slate-400">
-                  {l.sourceChannel ?? "—"} · 成交于 {fmtDate(l.updatedAt)}
+                  {l.conversionStage} · {l.primaryChannel?.name ?? "—"} · 更新于 {fmtDate(l.updatedAt)}
                 </div>
               </div>
               {l.convertedStudent && (

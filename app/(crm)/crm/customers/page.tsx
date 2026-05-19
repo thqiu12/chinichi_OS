@@ -1,14 +1,11 @@
+import Link from "next/link";
 import { currentUser } from "@/lib/auth";
 import { prisma, safe } from "@/lib/db";
 import { fmtDate } from "@/lib/format";
 import { Badge } from "@/components/ui/Badge";
+import { resourceAttrLabel, conversionStageLabel } from "@/lib/dict";
 
 export const dynamic = "force-dynamic";
-
-const STATUS_LABEL: Record<string, string> = {
-  NEW: "新", CONTACTED: "已联系", TRIAL: "试听",
-  NEGOTIATING: "意向", WON: "成交", LOST: "流失",
-};
 
 export default async function MyCustomersPage() {
   const me = await currentUser();
@@ -17,6 +14,7 @@ export default async function MyCustomersPage() {
       prisma.lead.findMany({
         where: me.role === "ADMIN" ? {} : { salesId: me.id },
         orderBy: { updatedAt: "desc" },
+        include: { primaryChannel: true },
       }),
     [],
   );
@@ -35,18 +33,27 @@ export default async function MyCustomersPage() {
         </div>
       ) : (
         <ul className="rounded-2xl bg-white border border-slate-100 divide-y divide-slate-100">
-          {mine.map((l) => (
-            <li key={l.id} className="px-4 py-3 flex justify-between text-sm">
-              <div>
-                <div className="font-medium">{l.name}</div>
-                <div className="text-[11px] text-slate-400">{l.phone ?? "—"} · {l.targetDegree ?? "—"}</div>
-              </div>
-              <div className="flex items-center gap-3">
-                <Badge>{STATUS_LABEL[l.status]}</Badge>
-                <span className="text-slate-500">{fmtDate(l.updatedAt)}</span>
-              </div>
-            </li>
-          ))}
+          {mine.map((l) => {
+            const attr = resourceAttrLabel(l.resourceAttribute);
+            const stage = conversionStageLabel(l.conversionStage);
+            return (
+              <li key={l.id} className="px-4 py-3 flex justify-between text-sm">
+                <div className="min-w-0">
+                  <Link href={`/crm/leads/${l.id}`} className="font-medium hover:underline">
+                    {l.name}
+                  </Link>
+                  <div className="text-[11px] text-slate-400">
+                    {l.primaryChannel?.name ?? "—"} · {l.degreeType ?? "—"}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Badge className={attr.cls}>{attr.label}</Badge>
+                  {l.conversionStage && <Badge className={stage.cls}>{stage.label}</Badge>}
+                  <span className="text-slate-500">{fmtDate(l.updatedAt)}</span>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

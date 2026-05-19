@@ -17,7 +17,10 @@ export type DupMatch = {
   name: string;
   phone: string | null;
   wechatId: string | null;
-  status: string;
+  // CRM 2.0: expose both 资源属性 and 有效资源转化阶段 (per PRD 1107 + 0827)
+  resourceAttribute: string;
+  conversionStage: string | null;
+  advisorConfirmation: string | null;
   salesId: string | null;
   conversionProbability: number;
   createdAt: Date;
@@ -25,8 +28,16 @@ export type DupMatch = {
   strength: "STRONG" | "WEAK"; // STRONG = wechat or phone hit; WEAK = name-only
 };
 
-function strongestOf(reasons: DupReason[]): DupReason {
-  return [...reasons].sort((a, b) => REASON_RANK[a] - REASON_RANK[b])[0];
+function pickIdentity(c: Lead) {
+  return {
+    id: c.id, name: c.name, phone: c.phone, wechatId: c.wechatId,
+    resourceAttribute: c.resourceAttribute,
+    conversionStage: c.conversionStage,
+    advisorConfirmation: c.advisorConfirmation,
+    salesId: c.salesId,
+    conversionProbability: c.conversionProbability,
+    createdAt: c.createdAt,
+  };
 }
 
 /**
@@ -69,20 +80,13 @@ export async function findDuplicates(input: {
     if (nameN   && normalizeName(c.name)       === nameN)   reasons.push("NAME");
     if (!reasons.length) continue;
 
-    // Sort reasons by rank (strongest first)
     reasons.sort((a, b) => REASON_RANK[a] - REASON_RANK[b]);
     const strength: "STRONG" | "WEAK" =
       reasons.some((r) => r === "WECHAT" || r === "PHONE") ? "STRONG" : "WEAK";
 
-    out.push({
-      id: c.id, name: c.name, phone: c.phone, wechatId: c.wechatId,
-      status: c.status, salesId: c.salesId,
-      conversionProbability: c.conversionProbability,
-      createdAt: c.createdAt, matchedOn: reasons, strength,
-    });
+    out.push({ ...pickIdentity(c), matchedOn: reasons, strength });
   }
 
-  // WeChat hits → phone hits → name-only. Within tier, newest first.
   return out.sort((a, b) => {
     const ra = REASON_RANK[a.matchedOn[0]];
     const rb = REASON_RANK[b.matchedOn[0]];
@@ -92,17 +96,11 @@ export async function findDuplicates(input: {
 }
 
 export type Cluster = {
-  key: string;       // the normalized value that linked them
+  key: string;
   reason: DupReason;
   leads: DupMatch[];
 };
 
-/**
- * Whole-DB scan for duplicate clusters. Cheap for MVP (<10k leads).
- * Same pair never appears twice: a wechat-linked pair is suppressed
- * from the phone cluster, and any strong-linked pair is suppressed
- * from name clusters.
- */
 export async function findClusters(): Promise<Cluster[]> {
   const all = await safe(
     () => prisma.lead.findMany({ orderBy: { createdAt: "desc" } }),
@@ -123,8 +121,8 @@ export async function findClusters(): Promise<Cluster[]> {
   }
 
   const clusters: Cluster[] = [];
-  const seenInWechat = new Set<string>();        // pairs grouped by wechat
-  const seenInStrong = new Set<string>();        // pairs grouped by wechat OR phone
+  const seenInWechat = new Set<string>();
+  const seenInStrong = new Set<string>();
 
   function pairKeys(leads: Lead[]): string[] {
     const ids = leads.map((l) => l.id).sort();
@@ -137,47 +135,30 @@ export async function findClusters(): Promise<Cluster[]> {
 
   function makeMatch(l: Lead, reason: DupReason): DupMatch {
     return {
-      id: l.id, name: l.name, phone: l.phone, wechatId: l.wechatId,
-      status: l.status, salesId: l.salesId,
-      conversionProbability: l.conversionProbability,
-      createdAt: l.createdAt, matchedOn: [reason],
+      ...pickIdentity(l),
+      matchedOn: [reason],
       strength: reason === "NAME" ? "WEAK" : "STRONG",
     };
   }
 
-  // 1. WeChat clusters first (highest signal)
   for (const [k, v] of byWechat) {
     if (v.length < 2) continue;
     for (const p of pairKeys(v)) { seenInWechat.add(p); seenInStrong.add(p); }
-    clusters.push({
-      reason: "WECHAT", key: k,
-      leads: v.map((l) => makeMatch(l, "WECHAT")),
-    });
+    clusters.push({ reason: "WECHAT", key: k, leads: v.map((l) => makeMatch(l, "WECHAT")) });
   }
-
-  // 2. Phone clusters — skip if pair already linked by wechat
   for (const [k, v] of byPhone) {
     if (v.length < 2) continue;
     const allPairs = pairKeys(v);
     if (allPairs.every((p) => seenInWechat.has(p))) continue;
     for (const p of allPairs) seenInStrong.add(p);
-    clusters.push({
-      reason: "PHONE", key: k,
-      leads: v.map((l) => makeMatch(l, "PHONE")),
-    });
+    clusters.push({ reason: "PHONE", key: k, leads: v.map((l) => makeMatch(l, "PHONE")) });
   }
-
-  // 3. Name clusters — skip if pair already linked by anything stronger
   for (const [k, v] of byName) {
     if (v.length < 2) continue;
     const allPairs = pairKeys(v);
     if (allPairs.every((p) => seenInStrong.has(p))) continue;
-    clusters.push({
-      reason: "NAME", key: k,
-      leads: v.map((l) => makeMatch(l, "NAME")),
-    });
+    clusters.push({ reason: "NAME", key: k, leads: v.map((l) => makeMatch(l, "NAME")) });
   }
 
-  // Surface order: WECHAT first, then PHONE, then NAME.
   return clusters.sort((a, b) => REASON_RANK[a.reason] - REASON_RANK[b.reason]);
 }

@@ -102,7 +102,7 @@ export async function getDashboard() {
       async () => {
         const [students, leads, dueWeek] = await Promise.all([
           prisma.student.count({ where: mentorScope }),
-          prisma.lead.count({ where: { status: { notIn: ["WON", "LOST"] } } }),
+          prisma.lead.count({ where: { resourceAttribute: { in: ["PENDING", "VALID"] } } }),
           prisma.deadline.count({
             where: { completedAt: null, dueAt: { lte: weekEnd } },
           }),
