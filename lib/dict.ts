@@ -24,16 +24,22 @@ export const ENGLISH_LEVELS = [
 // 有效资源转化阶段
 // PRD 1107 says: 删掉"已确认意向"选项 (now lives in AdvisorConfirmation enum).
 // PRD 0723 says: 已签约/老生续费/输单 are special (单选, no reminder).
-// The exact list isn't enumerated in the PRDs we have; this is our working set.
+// Includes legacy stages used by the existing CRM data (新获取/长线资源/机会资源/
+// 已出合同待签约) so historical leads keep their semantics after import. New
+// leads should prefer the modern vocabulary.
 export const CONVERSION_STAGES = [
+  "新获取",           // legacy — earliest stage
   "初步接触",
   "深度沟通",
   "试听",
   "意向待定",
+  "长线资源",         // legacy — slow burn, low priority
+  "机会资源",         // legacy — hot opportunity
   "报价",
-  "已签约",   // → triggers Contract panel
-  "老生续费", // → triggers Contract panel (isRenewal=true)
-  "输单",     // → triggers lostReason
+  "已出合同待签约",    // legacy — contract drafted, awaiting signature
+  "已签约",            // → triggers Contract panel
+  "老生续费",          // → triggers Contract panel (isRenewal=true)
+  "输单",              // → triggers lostReason
 ] as const;
 
 // Stages that should NOT show the reminder/visit/trial UI on a follow-up form

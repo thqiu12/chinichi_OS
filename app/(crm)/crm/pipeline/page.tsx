@@ -6,14 +6,18 @@ import { CONVERSION_STAGES } from "@/lib/dict";
 export const dynamic = "force-dynamic";
 
 const COLUMN_TONE: Record<string, string> = {
-  "初步接触": "bg-slate-100",
-  "深度沟通": "bg-blue-50",
-  "试听":     "bg-amber-50",
-  "意向待定": "bg-emerald-50",
-  "报价":     "bg-emerald-50",
-  "已签约":   "bg-emerald-100",
-  "老生续费": "bg-emerald-100",
-  "输单":     "bg-slate-100",
+  "新获取":           "bg-slate-50",
+  "初步接触":         "bg-slate-100",
+  "深度沟通":         "bg-blue-50",
+  "试听":             "bg-amber-50",
+  "意向待定":         "bg-emerald-50",
+  "长线资源":         "bg-violet-50",
+  "机会资源":         "bg-amber-50",
+  "报价":             "bg-emerald-50",
+  "已出合同待签约":    "bg-emerald-100",
+  "已签约":           "bg-emerald-100",
+  "老生续费":         "bg-emerald-100",
+  "输单":             "bg-slate-100",
 };
 
 export default async function PipelinePage() {
@@ -48,11 +52,11 @@ export default async function PipelinePage() {
         </Link>
       </header>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
+      <div className="flex gap-3 overflow-x-auto pb-2 -mx-6 px-6">
         {CONVERSION_STAGES.map((stage) => {
           const items = byStage[stage] ?? [];
           return (
-            <div key={stage} className={`rounded-2xl ${COLUMN_TONE[stage] ?? "bg-slate-100"} p-3 min-h-[440px]`}>
+            <div key={stage} className={`shrink-0 w-[240px] rounded-2xl ${COLUMN_TONE[stage] ?? "bg-slate-100"} p-3 min-h-[440px]`}>
               <div className="flex items-center justify-between mb-3 px-1">
                 <div className="text-sm font-medium">{stage}</div>
                 <div className="text-xs text-slate-500">{items.length}</div>

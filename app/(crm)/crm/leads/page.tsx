@@ -33,10 +33,16 @@ export default async function LeadsPage({
           <h1 className="text-2xl font-semibold tracking-tight">资源 (Leads)</h1>
           <p className="text-sm text-slate-500 mt-0.5">{leads.length} 条 · 销售工作台</p>
         </div>
-        <Link href="/crm/leads/new"
-              className="rounded-full bg-emerald-600 text-white px-4 h-9 inline-flex items-center text-sm">
-          + 新建资源
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href="/crm/leads/import"
+                className="rounded-full border border-slate-200 hover:bg-slate-50 px-4 h-9 inline-flex items-center text-sm">
+            ⬆ 批量导入
+          </Link>
+          <Link href="/crm/leads/new"
+                className="rounded-full bg-emerald-600 text-white px-4 h-9 inline-flex items-center text-sm">
+            + 新建资源
+          </Link>
+        </div>
       </header>
 
       <div className="flex gap-2 text-xs flex-wrap">
