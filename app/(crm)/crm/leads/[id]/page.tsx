@@ -1,42 +1,127 @@
 import Link from "next/link";
 import { prisma, safe } from "@/lib/db";
+import { currentUser } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Avatar } from "@/components/ui/Avatar";
-import { LeadAttributePill, LeadInlineField, LeadProbabilitySlider } from "@/components/crm/LeadHeader";
-import { ActivityLogger } from "@/components/crm/ActivityLogger";
-import { fmtDate, fmtDateTime } from "@/lib/format";
-import { conversionStageLabel } from "@/lib/dict";
 import { Badge } from "@/components/ui/Badge";
+import { LeadAttributePill } from "@/components/crm/LeadHeader";
+import { AdvisorFollowUpForm } from "@/components/crm/AdvisorFollowUpForm";
+import { FrontendFollowUpForm } from "@/components/crm/FrontendFollowUpForm";
+import { UnifiedTimeline, type TimelineItem } from "@/components/crm/UnifiedTimeline";
+import { ChannelsPanel } from "@/components/crm/ChannelsPanel";
+import { conversionStageLabel } from "@/lib/dict";
+import { fmtDate, fmtDateTime } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
-
-const ACT_ICON: Record<string, string> = {
-  CALL: "📞", MESSAGE: "💬", MEETING: "🤝",
-  TRIAL_LESSON: "🎓", NOTE: "📝", STATUS_CHANGE: "🔁",
-};
-const ACT_LABEL: Record<string, string> = {
-  CALL: "通话", MESSAGE: "消息", MEETING: "面谈",
-  TRIAL_LESSON: "试听课", NOTE: "备注", STATUS_CHANGE: "状态变更",
-};
 
 export default async function LeadDetailPage({
   params,
 }: {
   params: { id: string };
 }) {
+  const me = await currentUser();
   const lead = await safe(
     () =>
       prisma.lead.findUnique({
         where: { id: params.id },
         include: {
+          primaryChannel: { include: { parent: { include: { parent: true } } } },
+          advisorFollowUps: { include: { author: true }, orderBy: { createdAt: "desc" } },
+          frontendFollowUps: { include: { author: true }, orderBy: { createdAt: "desc" } },
           activities: { orderBy: { createdAt: "desc" }, take: 50 },
-          primaryChannel: true,
+          contracts: { orderBy: { createdAt: "desc" } },
         },
       }),
     null,
   );
 
   if (!lead) return demoNotice(params.id);
+
+  // Resolve secondary channel objects
+  const secondaryChannels = lead.secondaryChannelIds.length
+    ? await safe(
+        () =>
+          prisma.channel.findMany({
+            where: { id: { in: lead.secondaryChannelIds } },
+            include: { parent: { include: { parent: true } } },
+          }),
+        [],
+      )
+    : [];
+
+  // Resolve referenced user names for frontend followup added/removed
+  const allOwnerIds = new Set<string>();
+  for (const f of lead.frontendFollowUps) {
+    f.addedOwnerIds.forEach((id) => allOwnerIds.add(id));
+    f.removedOwnerIds.forEach((id) => allOwnerIds.add(id));
+  }
+  lead.ownerIds.forEach((id) => allOwnerIds.add(id));
+  const userById = new Map<string, { id: string; name: string; role: string }>();
+  if (allOwnerIds.size > 0) {
+    const users = await safe(
+      () =>
+        prisma.user.findMany({
+          where: { id: { in: [...allOwnerIds] } },
+          select: { id: true, name: true, role: true },
+        }),
+      [],
+    );
+    for (const u of users) userById.set(u.id, u);
+  }
+
+  // Teammates for the FrontendFollowUp owner picker
+  const teammates = await safe(
+    () =>
+      prisma.user.findMany({
+        where: { role: { in: ["SALES","CHANNEL","MARKETING","MENTOR","TEACHER","HEAD","ADMIN"] } },
+        select: { id: true, name: true, role: true },
+        orderBy: { name: "asc" },
+      }),
+    [],
+  );
+
+  // Merge into TimelineItem[]
+  const items: TimelineItem[] = [
+    ...lead.advisorFollowUps.map((a) => ({
+      kind: "ADVISOR" as const,
+      id: a.id,
+      authorName: a.author?.name ?? null,
+      createdAt: a.createdAt,
+      advisorConfirmation: a.advisorConfirmation,
+      conversionStage: a.conversionStage,
+      detail: a.detail,
+      visitedOffice: a.visitedOffice,
+      attendedTrial: a.attendedTrial,
+      expiredReason: a.expiredReason,
+      lostReason: a.lostReason,
+      reminderDays: a.reminderDays,
+    })),
+    ...lead.frontendFollowUps.map((f) => ({
+      kind: "FRONTEND" as const,
+      id: f.id,
+      authorName: f.author?.name ?? null,
+      createdAt: f.createdAt,
+      communicationRef: f.communicationRef,
+      revisitNote: f.revisitNote,
+      revisitDetail: f.revisitDetail,
+      assignedCampus: f.assignedCampus,
+      addedOwnerNames: f.addedOwnerIds.map((id) => userById.get(id)?.name ?? "—"),
+      removedOwnerNames: f.removedOwnerIds.map((id) => userById.get(id)?.name ?? "—"),
+      invalidReason: f.invalidReason,
+    })),
+    ...lead.activities.map((a) => ({
+      kind: "ACTIVITY" as const,
+      id: a.id,
+      createdAt: a.createdAt,
+      actKind: a.kind,
+      content: a.content,
+      result: a.result,
+    })),
+  ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+  // Permission: who can write which follow-up
+  const canAdvisor  = ["SALES","ADMIN","HEAD"].includes(me.role);
+  const canFrontend = ["CHANNEL","MARKETING","ADMIN","HEAD"].includes(me.role);
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
@@ -60,101 +145,114 @@ export default async function LeadDetailPage({
             {" "}升学类型 {lead.degreeType ?? "—"}
           </p>
         </div>
-        {lead.resourceAttribute === "VALID" && lead.conversionStage !== "已签约" && (
-          <Link href={`/crm/leads/${lead.id}/convert`}
-                className="rounded-full bg-emerald-600 text-white px-4 h-9 inline-flex items-center text-sm shrink-0">
-            一键转 Student →
+        <div className="flex items-center gap-2 shrink-0">
+          <Link href={`/crm/leads/${lead.id}/edit`}
+                className="rounded-full border border-slate-200 hover:bg-slate-50 px-3 h-9 inline-flex items-center text-sm">
+            编辑
           </Link>
-        )}
+          {lead.resourceAttribute === "VALID" && lead.conversionStage !== "已签约" && (
+            <Link href={`/crm/leads/${lead.id}/convert`}
+                  className="rounded-full bg-emerald-600 text-white px-4 h-9 inline-flex items-center text-sm">
+              一键转 Student →
+            </Link>
+          )}
+        </div>
       </header>
 
       <div className="mt-6 grid grid-cols-1 lg:grid-cols-[1fr,320px] gap-6">
-        {/* LEFT: activity feed + logger */}
+        {/* LEFT — follow-up forms + unified timeline */}
         <section className="space-y-4">
-          <ActivityLogger leadId={lead.id} />
+          {canAdvisor && <AdvisorFollowUpForm leadId={lead.id} />}
+          {canFrontend && (
+            <FrontendFollowUpForm
+              leadId={lead.id}
+              teammates={teammates}
+              currentOwnerIds={lead.ownerIds}
+            />
+          )}
+          {!canAdvisor && !canFrontend && (
+            <div className="rounded-2xl bg-slate-50 border border-slate-100 px-4 py-3 text-sm text-slate-500">
+              当前角色 {me.role} 没有跟进编辑权限。可以查看下方时间轴。
+            </div>
+          )}
 
           <Card>
-            <CardHeader>
-              <CardTitle>沟通记录 · {lead.activities.length}</CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle>跟进时间轴 · {items.length}</CardTitle></CardHeader>
             <CardContent>
-              {lead.activities.length === 0 ? (
-                <div className="py-6 text-center text-sm text-slate-400">
-                  还没有沟通记录 —— 用上方表单记一笔
-                </div>
-              ) : (
-                <ol className="relative border-l border-slate-100 ml-3 space-y-1">
-                  {lead.activities.map((a) => (
-                    <li key={a.id} className="pl-5 pb-4 relative">
-                      <span className="absolute -left-[10px] top-1 w-[18px] h-[18px] rounded-full bg-white border border-slate-200 flex items-center justify-center text-[10px]">
-                        {ACT_ICON[a.kind] ?? "•"}
-                      </span>
-                      <div className="flex items-center justify-between">
-                        <div className="text-sm font-medium">{ACT_LABEL[a.kind] ?? a.kind}</div>
-                        <div className="text-[11px] text-slate-400">{fmtDateTime(a.createdAt)}</div>
-                      </div>
-                      <p className="text-sm text-slate-700 mt-1 leading-relaxed">{a.content}</p>
-                      {(a.result || a.nextAction) && (
-                        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-xs">
-                          {a.result && <span className="text-emerald-700">结果：{a.result}</span>}
-                          {a.nextAction && <span className="text-slate-500">下一步：{a.nextAction}{a.nextActionDueAt && ` · ${fmtDate(a.nextActionDueAt)}`}</span>}
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ol>
-              )}
+              <UnifiedTimeline items={items} />
             </CardContent>
           </Card>
         </section>
 
-        {/* RIGHT: editable fields */}
+        {/* RIGHT — channels + contracts + side info */}
         <aside className="space-y-4">
           <Card>
-            <CardHeader><CardTitle>客户信息</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              <Editable label="转化概率">
-                <LeadProbabilitySlider leadId={lead.id} initial={lead.conversionProbability} />
-              </Editable>
-              <Editable label="电话">
-                <LeadInlineField leadId={lead.id} field="phone" initial={lead.phone} placeholder="点击填写" />
-              </Editable>
-              <Editable label="微信">
-                <LeadInlineField leadId={lead.id} field="wechatId" initial={lead.wechatId} placeholder="点击填写" />
-              </Editable>
-              <Editable label="升学类型">
-                <LeadInlineField leadId={lead.id} field="degreeType" initial={lead.degreeType} placeholder="点击填写" />
-              </Editable>
-              <Editable label="学科属性">
-                <LeadInlineField leadId={lead.id} field="subjectArea" initial={lead.subjectArea} placeholder="点击填写" />
-              </Editable>
-              <Editable label="所在城市">
-                <LeadInlineField leadId={lead.id} field="city" initial={lead.city} placeholder="点击填写" />
-              </Editable>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle>下一步</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              <Editable label="动作">
-                <LeadInlineField leadId={lead.id} field="nextAction" initial={lead.nextAction} placeholder="例如：周三面咨" />
-              </Editable>
-              <Editable label="截止">
-                <LeadInlineField leadId={lead.id} field="nextActionDueAt" initial={lead.nextActionDueAt as any}
-                                 type="date" placeholder="—" />
-              </Editable>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle>备注</CardTitle></CardHeader>
+            <CardHeader><CardTitle>资源来源</CardTitle></CardHeader>
             <CardContent>
-              <LeadInlineField leadId={lead.id} field="notes" initial={lead.notes} placeholder="点击填写备注…" />
-              <div className="text-[11px] text-slate-400 mt-3">
-                创建于 {fmtDateTime(lead.createdAt)}<br/>
-                更新于 {fmtDateTime(lead.updatedAt)}
+              <ChannelsPanel
+                leadId={lead.id}
+                primary={lead.primaryChannel ? {
+                  id: lead.primaryChannel.id,
+                  name: lead.primaryChannel.name,
+                  parentName: lead.primaryChannel.parent?.name ?? null,
+                } : null}
+                secondary={secondaryChannels.map((c) => ({
+                  id: c.id, name: c.name, parentName: c.parent?.name ?? null,
+                }))}
+              />
+              <div className="text-[11px] text-slate-400 mt-2">
+                来源详情：{lead.sourceDetail ?? "—"}<br/>
+                所属校区：{lead.sourceCampus ?? "—"}
               </div>
+            </CardContent>
+          </Card>
+
+          {lead.contracts.length > 0 && (
+            <Card>
+              <CardHeader><CardTitle>签约</CardTitle></CardHeader>
+              <CardContent className="space-y-2">
+                {lead.contracts.map((c) => (
+                  <div key={c.id} className="rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2 text-xs">
+                    <div className="font-medium text-emerald-800">
+                      {c.isRenewal ? "老生续费" : "签约"} {c.amount ? `· ¥${c.amount}` : ""}
+                    </div>
+                    <div className="text-slate-600 mt-0.5">
+                      签约时间：{c.signedAt ? fmtDate(c.signedAt) : "—"}<br/>
+                      转接语校：{c.toLanguageSchool ? `是 (${c.languageSchool ?? "未指定"})` : "否"}
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          <Card>
+            <CardHeader><CardTitle>当前负责人</CardTitle></CardHeader>
+            <CardContent>
+              {lead.ownerIds.length === 0 ? (
+                <div className="text-sm text-slate-400">未分配</div>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {lead.ownerIds.map((id) => {
+                    const u = userById.get(id);
+                    return (
+                      <span key={id} className="text-[11px] px-2 py-1 rounded-full bg-slate-100 text-slate-700">
+                        {u?.name ?? id} · {u?.role ?? ""}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>元信息</CardTitle></CardHeader>
+            <CardContent className="text-[11px] text-slate-500 space-y-1">
+              <div>创建于 {fmtDateTime(lead.createdAt)}</div>
+              <div>更新于 {fmtDateTime(lead.updatedAt)}</div>
+              {lead.lastAdvisorFollowUpAt && <div>最近顾问跟进 {fmtDateTime(lead.lastAdvisorFollowUpAt)}</div>}
+              {lead.lastFrontendFollowUpAt && <div>最近前端跟进 {fmtDateTime(lead.lastFrontendFollowUpAt)}</div>}
             </CardContent>
           </Card>
         </aside>
@@ -163,29 +261,21 @@ export default async function LeadDetailPage({
   );
 }
 
-function Editable({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <div className="text-[11px] text-slate-500 mb-0.5">{label}</div>
-      {children}
-    </div>
-  );
-}
-
 function demoNotice(id: string) {
   return (
     <div className="mx-auto max-w-3xl px-6 py-10">
       <Link href="/crm/leads" className="text-sm text-slate-500">← 返回 Leads</Link>
-      <h1 className="text-xl font-semibold mt-3">Lead 详情（演示）</h1>
+      <h1 className="text-xl font-semibold mt-3">资源详情（演示）</h1>
       <p className="text-sm text-slate-500 mt-2 leading-relaxed">
-        当前未连接数据库，无法加载 Lead <code className="bg-slate-100 px-1 rounded text-xs">{id}</code> 的活动流。
-        连接 Postgres + <code className="bg-slate-100 px-1 rounded text-xs">npm run db:seed</code> 后，
-        本页会显示：
+        当前未连接数据库或资源 ID <code className="bg-slate-100 px-1 rounded text-xs">{id}</code> 不存在。
+      </p>
+      <p className="text-sm text-slate-500 mt-2 leading-relaxed">
+        连接 Postgres + <code className="bg-slate-100 px-1 rounded text-xs">npm run db:seed</code> 后会看到：
       </p>
       <ul className="mt-3 text-sm text-slate-600 list-disc pl-5 space-y-1">
-        <li>左侧：沟通记录时间流（CALL / MESSAGE / 试听 / 备注 / 状态变更）+ 一键记录</li>
-        <li>右侧：转化概率滑块、电话/微信/渠道/目标 inline 编辑、下一步、备注</li>
-        <li>顶部：状态 pill 点击切换、"一键转 Student" 入口</li>
+        <li>左：根据角色显示咨询顾问跟进 / 前端分配跟进 表单 + 统一时间轴</li>
+        <li>右：资源来源（首选+其他+设为首选按钮）/ 签约信息 / 当前负责人 / 元信息</li>
+        <li>顶部：资源属性 pill + 转化阶段 badge + 编辑 + 一键转 Student</li>
       </ul>
     </div>
   );
