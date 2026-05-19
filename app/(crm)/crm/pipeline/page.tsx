@@ -9,7 +9,8 @@ const COLUMN_TONE: Record<string, string> = {
   "挖需中":            "bg-slate-100",
   "机会资源":          "bg-amber-50",
   "长线资源":          "bg-violet-50",
-  "当月分配当月签约":   "bg-emerald-100",
+  "当月分配当月签约":   "bg-emerald-200",  // brighter — hot signal
+  "签约":              "bg-emerald-100",  // signed (older lead)
   "输单":              "bg-slate-200",
 };
 
@@ -49,7 +50,7 @@ export default async function PipelinePage() {
         </Link>
       </header>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         {CONVERSION_STAGES.map((stage) => {
           const items = byStage[stage] ?? [];
           return (

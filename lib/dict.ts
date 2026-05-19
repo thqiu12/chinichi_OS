@@ -23,32 +23,40 @@ export const ENGLISH_LEVELS = [
 
 // 有效资源转化阶段
 // Per PRD: 资源属性=有效 → 顾问确认 ∈ {待判定, 已确认意向, 失效}, and ONLY when
-// 顾问确认=已确认意向 do these 5 conversionStage values apply.
+// 顾问确认=已确认意向 do these 6 conversionStage values apply.
+// 当月分配当月签约 vs 签约 — both are signed contracts, the former is the
+// faster-funnel signal (assigned and signed within the same month); the latter
+// is older pipeline finally converting this month.
 export const CONVERSION_STAGES = [
   "挖需中",            // probing / discovery
   "机会资源",          // hot opportunity
   "长线资源",          // slow burn, long-tail
-  "当月分配当月签约",   // assigned & signed within the same month → triggers Contract
+  "当月分配当月签约",   // same-month assigned + signed → triggers Contract
+  "签约",              // signed this month (older lead) → triggers Contract
   "输单",              // lost
 ] as const;
 
-// Legacy stage values found in existing CRM exports — map to the new 5-value
+// Legacy stage values found in existing CRM exports — map to the new 6-value
 // vocabulary on import. Anything not in this map keeps its raw string but
 // won't show up in the pipeline column grid.
+// 已签约/老生续费 → 签约 (we can't reconstruct "assigned this month?" from a
+// historical export, so we default to the safer non-当月分配 label; sales can
+// flip a row to 当月分配当月签约 manually if they know it was same-month).
 export const LEGACY_STAGE_MAP: Record<string, string> = {
   "初步接触":      "挖需中",
   "深度沟通":      "挖需中",
   "试听":          "机会资源",
   "意向待定":      "长线资源",
-  "报价":          "当月分配当月签约",
-  "已出合同待签约": "当月分配当月签约",
-  "已签约":        "当月分配当月签约",
-  "老生续费":      "当月分配当月签约",
+  "报价":          "机会资源",
+  "已出合同待签约": "机会资源",
+  "已签约":        "签约",
+  "老生续费":      "签约",
   // Keep these as-is (they're already in the new vocab):
   "挖需中":            "挖需中",
   "机会资源":          "机会资源",
   "长线资源":          "长线资源",
   "当月分配当月签约":  "当月分配当月签约",
+  "签约":              "签约",
   "输单":              "输单",
   // 新获取 doesn't fit the 已确认意向 sub-tier — caller should reset
   // conversionStage = null and advisorConfirmation = PENDING for these.
@@ -56,12 +64,12 @@ export const LEGACY_STAGE_MAP: Record<string, string> = {
 
 // Stages that should NOT show the reminder/visit/trial UI on a follow-up form
 // (no further follow-up scheduling once the deal is closed/lost).
-export const TERMINAL_STAGES = new Set<string>(["当月分配当月签约", "输单"]);
+export const TERMINAL_STAGES = new Set<string>(["当月分配当月签约", "签约", "输单"]);
 
-// Stages that should trigger the Contract sub-panel. 老生续费 is now modeled as
-// a checkbox on the Contract row (isRenewal=true) since the user moved "renewal"
-// out of the stage enum.
-export const CONTRACT_STAGES = new Set<string>(["当月分配当月签约"]);
+// Stages that should trigger the Contract sub-panel. Both 当月分配当月签约 and
+// 签约 are actual signings — the difference is reporting/funnel timing.
+// 老生续费 is modeled as a checkbox on the Contract row (isRenewal=true).
+export const CONTRACT_STAGES = new Set<string>(["当月分配当月签约", "签约"]);
 
 // 无效原因 (when resourceAttribute = INVALID)
 export const INVALID_REASONS = [

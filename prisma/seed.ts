@@ -246,7 +246,7 @@ async function main() {
       phone: "13800007777", wechatId: "wangyuxiang",
       resourceAttribute: "VALID",
       advisorConfirmation: "INTENT_CONFIRMED",
-      conversionStage: "当月分配当月签约",
+      conversionStage: "签约",
       primaryChannelId: chReferralEmp?.id,
       degreeType: "大学院-修士",
       subjectArea: "理科",
