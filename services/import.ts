@@ -208,16 +208,10 @@ export async function importLeads(
             },
           });
         }
-        // Bump cached last-followed timestamps if needed (cheap single update inside tx)
-        if (payload.advisorFollowUp || payload.frontendFollowUp) {
-          await tx.lead.update({
-            where: { id: created.id },
-            data: {
-              ...(payload.advisorFollowUp  ? { lastAdvisorFollowUpAt:  new Date() } : {}),
-              ...(payload.frontendFollowUp ? { lastFrontendFollowUpAt: new Date() } : {}),
-            },
-          });
-        }
+        // NOTE: we deliberately skip the lastAdvisorFollowUpAt / lastFrontendFollowUpAt
+        // cache update here. Each row would cost another ~150ms DB roundtrip and
+        // push 10-row chunks past Hobby's 10s ceiling. Run a one-off backfill
+        // after import: UPDATE Lead SET lastAdvisorFollowUpAt = (subquery), etc.
         return created;
       });
 

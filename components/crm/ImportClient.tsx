@@ -47,10 +47,12 @@ export function ImportClient() {
     setProgress({ done: 0, total: rows.length });
     setAggregate({ created: 0, skipped: 0, failed: 0, details: [] });
 
-    // Per-row insert does up to 4 DB roundtrips (lead + advisorFU + frontendFU
-    // + update). With Neon us-east-1 ↔ Vercel hnd1 RTT ~150ms, that's ~600ms/row.
-    // 10 rows ≈ 6s, well under Hobby's 10s function ceiling. Bump for Pro plan.
-    const CHUNK = 10;
+    // Per-row insert does up to 3 DB roundtrips (lead + advisorFU + frontendFU)
+    // inside one transaction. With Neon us-east-1 ↔ Vercel hnd1 RTT ~150ms,
+    // budget ~450ms/row + ~1.5s dedupe-load overhead per chunk. 8 rows ≈ 5s,
+    // comfortably under Hobby's 10s function ceiling.
+    // For Pro plan (60s functions) you can bump this to 50-100.
+    const CHUNK = 8;
     let agg = { created: 0, skipped: 0, failed: 0, details: [] as PerRow[] };
     for (let i = 0; i < rows.length; i += CHUNK) {
       const chunk = rows.slice(i, i + CHUNK);
