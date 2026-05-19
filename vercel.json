@@ -4,12 +4,12 @@
   "framework": "nextjs",
   "buildCommand": "prisma generate && next build",
   "crons": [
-    { "path": "/api/cron/deadline-tick", "schedule": "0 * * * *" },
+    { "path": "/api/cron/deadline-tick", "schedule": "0 0 * * *" },
     { "path": "/api/cron/risk-tick",     "schedule": "0 17 * * *" }
   ],
   "functions": {
-    "app/api/leads/import/route.ts": { "maxDuration": 60 },
-    "app/api/cron/deadline-tick/route.ts": { "maxDuration": 60 },
-    "app/api/cron/risk-tick/route.ts": { "maxDuration": 60 }
+    "app/api/leads/import/route.ts": { "maxDuration": 10 },
+    "app/api/cron/deadline-tick/route.ts": { "maxDuration": 10 },
+    "app/api/cron/risk-tick/route.ts": { "maxDuration": 10 }
   }
 }
