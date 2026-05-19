@@ -10,3 +10,4 @@ out
 .turbo
 prisma/migrations/dev.db
 tsconfig.tsbuildinfo
+.env*.local

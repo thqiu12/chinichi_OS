@@ -1,5 +1,5 @@
 import { prisma, safe } from "@/lib/db";
-import { findDuplicates } from "./dedupe";
+import { normalizePhone, normalizeWechat } from "@/lib/normalize";
 import {
   detectFormat, mapLegacyRow, mapTemplateRow,
   type ChannelDict, type MajorDict, type SchoolTierDict,
@@ -26,13 +26,8 @@ async function buildDicts(): Promise<{ channels: ChannelDict; majors: MajorDict;
   ]);
 
   const cd: ChannelDict = {
-    byLevelName: {
-      L1: new Map(),
-      L2: new Map(),
-      L3: new Map(),
-    },
+    byLevelName: { L1: new Map(), L2: new Map(), L3: new Map() },
   };
-  // index by name within level + parent scope
   for (const c of channels) {
     if (c.level === "L1") cd.byLevelName.L1.set(c.name.normalize("NFKC").trim(), c.id);
     else if (c.level === "L2") {
@@ -45,7 +40,6 @@ async function buildDicts(): Promise<{ channels: ChannelDict; majors: MajorDict;
   }
 
   const md: MajorDict = { byName: new Map(), byPair: new Map() };
-  // Build "L1 name → id" and "L2 name → id" + pair lookup
   const l1NameById = new Map<string, string>();
   for (const m of majors.filter((x) => x.level === 1)) l1NameById.set(m.id, m.name);
   for (const m of majors.filter((x) => x.level === 2)) {
@@ -62,6 +56,30 @@ async function buildDicts(): Promise<{ channels: ChannelDict; majors: MajorDict;
   return { channels: cd, majors: md, tiers: td };
 }
 
+/**
+ * Build in-memory phone/wechat indexes of all existing leads in ONE query.
+ * Per-row dedupe then becomes O(1) in-memory instead of an extra DB roundtrip
+ * (which is what was timing out a Hobby 10s function with Neon in us-east-1).
+ */
+async function buildDedupeIndex() {
+  const all = await safe(
+    () =>
+      prisma.lead.findMany({
+        select: { id: true, name: true, phone: true, wechatId: true },
+      }),
+    [] as { id: string; name: string; phone: string | null; wechatId: string | null }[],
+  );
+  const byWechat = new Map<string, { id: string; name: string }>();
+  const byPhone  = new Map<string, { id: string; name: string }>();
+  for (const l of all) {
+    const w = normalizeWechat(l.wechatId);
+    if (w) byWechat.set(w, { id: l.id, name: l.name });
+    const p = normalizePhone(l.phone);
+    if (p) byPhone.set(p, { id: l.id, name: l.name });
+  }
+  return { byWechat, byPhone };
+}
+
 export async function importLeads(
   rawRows: any[],
   opts: { authorId: string | null; dryRun?: boolean; startIndex?: number } = { authorId: null },
@@ -72,10 +90,12 @@ export async function importLeads(
 
   const headers = Object.keys(rawRows[0]);
   const format = detectFormat(headers);
-  const dicts = await buildDicts();
+
+  // Load once per chunk: dicts + dedupe index. Both are single queries.
+  const [dicts, dedupeIdx] = await Promise.all([buildDicts(), buildDedupeIndex()]);
 
   for (let i = 0; i < rawRows.length; i++) {
-    const rowNum = startIndex + i + 2; // +2 since spreadsheet row 1 is headers
+    const rowNum = startIndex + i + 2; // +2: spreadsheet row 1 is headers
     let payload;
     try {
       payload = format === "template"
@@ -98,36 +118,32 @@ export async function importLeads(
       continue;
     }
 
-    // Dedupe (per PRD: WeChat first, then phone)
-    try {
-      const matches = await findDuplicates({
-        wechatId: payload.lead.wechatId,
-        phone: payload.lead.phone,
-        name: payload.lead.name,
+    // In-memory dedupe (no DB roundtrip).
+    const wn = normalizeWechat(payload.lead.wechatId);
+    const pn = normalizePhone(payload.lead.phone);
+    const wechatHit = wn ? dedupeIdx.byWechat.get(wn) : undefined;
+    const phoneHit  = pn ? dedupeIdx.byPhone.get(pn) : undefined;
+    if (wechatHit || phoneHit) {
+      const hit = wechatHit ?? phoneHit!;
+      const why = wechatHit && phoneHit ? "WECHAT+PHONE" : wechatHit ? "WECHAT" : "PHONE";
+      result.skipped++;
+      result.rows.push({
+        row: rowNum, ok: false,
+        reason: `duplicate of ${hit.name} (${why}) → ${hit.id}`,
       });
-      const strong = matches.find((m) => m.matchedOn.includes("WECHAT") || m.matchedOn.includes("PHONE"));
-      if (strong) {
-        result.skipped++;
-        result.rows.push({
-          row: rowNum, ok: false,
-          reason: `duplicate of ${strong.name} (${strong.matchedOn.join("+")}) → ${strong.id}`,
-        });
-        continue;
-      }
-    } catch (e) {
-      // Dedupe is best-effort; if DB is down, fall back to "fail row"
-      result.failed++;
-      result.rows.push({ row: rowNum, ok: false, reason: `dedupe error: ${(e as Error).message}` });
       continue;
     }
 
     if (opts.dryRun) {
+      // Reserve the keys so a duplicate later in the same file doesn't pass
+      if (wn) dedupeIdx.byWechat.set(wn, { id: "(dry-run)", name: payload.lead.name });
+      if (pn) dedupeIdx.byPhone.set(pn, { id: "(dry-run)", name: payload.lead.name });
       result.created++;
       result.rows.push({ row: rowNum, ok: true, leadId: "(dry-run)" });
       continue;
     }
 
-    // Insert
+    // Insert.
     try {
       const lead = await prisma.$transaction(async (tx) => {
         const { force: _drop, ...leadData } = payload.lead;
@@ -160,10 +176,6 @@ export async function importLeads(
               reminderDays: allowReminder ? af.reminderDays : null,
             },
           });
-          await tx.lead.update({
-            where: { id: created.id },
-            data: { lastAdvisorFollowUpAt: new Date() },
-          });
         }
         if (payload.frontendFollowUp) {
           const ff = payload.frontendFollowUp;
@@ -181,10 +193,6 @@ export async function importLeads(
               removedOwnerIds: [],
             },
           });
-          await tx.lead.update({
-            where: { id: created.id },
-            data: { lastFrontendFollowUpAt: new Date() },
-          });
         }
         if (payload.contract && payload.advisorFollowUp?.conversionStage &&
             CONTRACT_STAGES.has(payload.advisorFollowUp.conversionStage)) {
@@ -200,8 +208,22 @@ export async function importLeads(
             },
           });
         }
+        // Bump cached last-followed timestamps if needed (cheap single update inside tx)
+        if (payload.advisorFollowUp || payload.frontendFollowUp) {
+          await tx.lead.update({
+            where: { id: created.id },
+            data: {
+              ...(payload.advisorFollowUp  ? { lastAdvisorFollowUpAt:  new Date() } : {}),
+              ...(payload.frontendFollowUp ? { lastFrontendFollowUpAt: new Date() } : {}),
+            },
+          });
+        }
         return created;
       });
+
+      // Reserve keys so subsequent rows in the same chunk skip on duplicate
+      if (wn) dedupeIdx.byWechat.set(wn, { id: lead.id, name: lead.name });
+      if (pn) dedupeIdx.byPhone.set(pn, { id: lead.id, name: lead.name });
 
       result.created++;
       result.rows.push({ row: rowNum, ok: true, leadId: lead.id });

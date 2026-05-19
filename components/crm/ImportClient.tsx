@@ -47,7 +47,10 @@ export function ImportClient() {
     setProgress({ done: 0, total: rows.length });
     setAggregate({ created: 0, skipped: 0, failed: 0, details: [] });
 
-    const CHUNK = 50;
+    // Per-row insert does up to 4 DB roundtrips (lead + advisorFU + frontendFU
+    // + update). With Neon us-east-1 ↔ Vercel hnd1 RTT ~150ms, that's ~600ms/row.
+    // 10 rows ≈ 6s, well under Hobby's 10s function ceiling. Bump for Pro plan.
+    const CHUNK = 10;
     let agg = { created: 0, skipped: 0, failed: 0, details: [] as PerRow[] };
     for (let i = 0; i < rows.length; i += CHUNK) {
       const chunk = rows.slice(i, i + CHUNK);
